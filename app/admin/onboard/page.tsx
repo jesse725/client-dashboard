@@ -38,6 +38,7 @@ function OnboardPage() {
   const prefillId = searchParams.get('prefill');
   const [step, setStep] = useState(0);
   const [prefillData, setPrefillData] = useState<any>(null);
+  const [pendingClients, setPendingClients] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<any>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -72,16 +73,32 @@ function OnboardPage() {
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  // Pre-fill form from a pending Google Form submission
+  // Load pending form submissions for the dropdown
+  useEffect(() => {
+    fetch('/api/clients')
+      .then(r => r.json())
+      .then(data => setPendingClients((Array.isArray(data) ? data : []).filter((c: any) => c.onboard_status === 'pending')));
+  }, []);
+
+  // Pre-fill from URL param on load
   useEffect(() => {
     if (!prefillId) return;
     fetch(`/api/clients/${prefillId}`)
       .then(r => r.json())
-      .then(data => {
-        setPrefillData(data);
-        setForm(f => ({ ...f, name: data.name ?? f.name }));
-      });
+      .then(data => applyPrefill(data));
   }, [prefillId]);
+
+  function applyPrefill(data: any) {
+    setPrefillData(data);
+    setForm(f => ({ ...f, name: data.name ?? f.name }));
+  }
+
+  function handlePendingSelect(id: string) {
+    if (!id) { setPrefillData(null); setForm(f => ({ ...f, name: '' })); return; }
+    fetch(`/api/clients/${id}`)
+      .then(r => r.json())
+      .then(data => applyPrefill(data));
+  }
 
   async function fetchGHLStages() {
     if (!form.ghl_api_key || !form.ghl_location_id) {
@@ -265,6 +282,33 @@ function OnboardPage() {
       </nav>
 
       <div className="max-w-2xl mx-auto px-6 py-8">
+
+        {/* Pending client picker */}
+        <div className="card p-4 mb-6 flex items-center gap-4">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              Who are you onboarding today?
+            </label>
+            <select
+              className="input"
+              defaultValue={prefillId ?? ''}
+              onChange={e => handlePendingSelect(e.target.value)}
+            >
+              <option value="">— Select a form submission or start fresh —</option>
+              {pendingClients.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.contact_name ? ` · ${c.contact_name}` : ''}{c.contact_email ? ` (${c.contact_email})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          {prefillData && (
+            <div className="text-xs px-3 py-1.5 rounded-full font-medium shrink-0" style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--accent)' }}>
+              ✓ Pre-filled
+            </div>
+          )}
+        </div>
+
         {/* Step indicators */}
         <div className="flex items-center gap-1 mb-8 overflow-x-auto pb-1">
           {STEPS.map((s, i) => (
