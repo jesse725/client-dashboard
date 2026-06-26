@@ -20,6 +20,13 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 export default function EditClientModal({ client, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     name: client.name,
+    contact_name: (client as any).contact_name ?? '',
+    contact_email: (client as any).contact_email ?? '',
+    contact_phone: (client as any).contact_phone ?? '',
+    address: (client as any).address ?? '',
+    ein: (client as any).ein ?? '',
+    target_locations: (client as any).target_locations ?? '',
+    website_url: (client as any).website_url ?? '',
     start_date: client.start_date,
     date_launched: client.date_launched ?? '',
     date_billed: client.date_billed ?? '',

@@ -334,17 +334,34 @@ export default function ClientDashboardPage() {
 
           {/* Sales summary stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-            <StatCard label="Total Quoted" value={`$${totalQuoted.toLocaleString()}`}
-              sub={`across ${quotes.length} quote${quotes.length !== 1 ? 's' : ''}`} />
-            <StatCard label="Pipeline Value" value={`$${openValue.toLocaleString()}`}
-              sub={`${quotes.filter(q => q.status === 'open').length} open quotes`}
-              color="var(--yellow)" />
-            <StatCard label="Revenue Closed" value={`$${m.totalRevenue.toLocaleString()}`}
-              sub={`${m.closedDeals} deal${m.closedDeals !== 1 ? 's' : ''} closed`}
-              color="var(--green)" />
-            <StatCard label="Close Rate" value={`${m.closeRateByCount.toFixed(1)}%`}
+            <StatCard
+              label="Live Ad Spend"
+              value={`$${Math.round(adSpend).toLocaleString()}`}
+              sub={metaStats ? 'live from Meta' : client.daily_ad_spend > 0 ? 'estimated' : 'manual'}
+              color="var(--accent)"
+              icon={<DollarSign size={14} />}
+            />
+            <StatCard
+              label="Jobs Quoted"
+              value={String(quotes.length)}
+              sub={`$${totalQuoted.toLocaleString()} total value`}
+              color="var(--yellow)"
+              icon={<FileText size={14} />}
+            />
+            <StatCard
+              label="Jobs Closed"
+              value={String(m.closedDeals)}
+              sub={`$${m.totalRevenue.toLocaleString()} revenue`}
+              color="var(--green)"
+              icon={<CheckCircle size={14} />}
+            />
+            <StatCard
+              label="Close Rate"
+              value={`${m.closeRateByCount.toFixed(1)}%`}
               sub={`${m.closeRateByValue.toFixed(1)}% by value`}
-              color={m.closeRateByCount >= 30 ? 'var(--green)' : 'var(--yellow)'} />
+              color={m.closeRateByCount >= 30 ? 'var(--green)' : 'var(--yellow)'}
+              icon={<TrendingUp size={14} />}
+            />
           </div>
 
           {quotes.length === 0 ? (

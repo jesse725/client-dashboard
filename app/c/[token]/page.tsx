@@ -294,13 +294,12 @@ export default function ClientSharePage() {
         <section>
           <SectionHead icon={<DollarSign size={14} />} label="Sales Results" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
-            <Tile label="Total Quoted" value={fmtUSD(totalQuoted)}
-              sub={`${quotes.length} quote${quotes.length !== 1 ? 's' : ''}`} />
-            <Tile label="Open Pipeline" value={fmtUSD(openValue)}
-              sub={`${quotes.filter(q => q.status === 'open').length} pending`} color={C.yellow} />
-            <Tile label="Revenue Won" value={fmtUSD(metrics.totalRevenue)}
-              sub={`${metrics.closedDeals} deal${metrics.closedDeals !== 1 ? 's' : ''} closed`} color={C.green} />
-            <Tile label="Avg Deal Value" value={fmtUSD(metrics.avgDealValue)} sub="per closed deal" />
+            <Tile label="Live Ad Spend" value={fmtUSD(adSpend)}
+              sub={metaStats ? 'live from Meta' : 'estimated'} color={C.accent} />
+            <Tile label="Jobs Quoted" value={String(quotes.length)}
+              sub={`${fmtUSD(totalQuoted)} total value`} color={C.yellow} />
+            <Tile label="Jobs Closed" value={String(metrics.closedDeals)}
+              sub={`${fmtUSD(metrics.totalRevenue)} revenue`} color={C.green} />
             <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 16px', textAlign: 'center' }}>
               <p style={{ fontSize: 26, fontWeight: 800, color: rc(metrics.closeRateByCount, 20, 50), lineHeight: 1 }}>{fmtPct(metrics.closeRateByCount)}</p>
               <p style={{ fontSize: 10, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginTop: 6 }}>Close Rate</p>
