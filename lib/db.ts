@@ -115,30 +115,6 @@ function initSchema(db: Database.Database) {
   if (!colNames.includes('rebilling_date')) {
     db.exec('ALTER TABLE clients ADD COLUMN rebilling_date TEXT');
   }
-  if (!colNames.includes('stripe_customer_id')) {
-    db.exec('ALTER TABLE clients ADD COLUMN stripe_customer_id TEXT');
-  }
-  if (!colNames.includes('stripe_subscription_id')) {
-    db.exec('ALTER TABLE clients ADD COLUMN stripe_subscription_id TEXT');
-  }
-
-  // invoices table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS invoices (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-      stripe_invoice_id TEXT,
-      amount REAL NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','paid','void','uncollectible')),
-      description TEXT,
-      invoice_url TEXT,
-      period_start TEXT,
-      period_end TEXT,
-      paid_at TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
-
   // Seed default admin if none exists
   const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
   if (!adminExists) {
