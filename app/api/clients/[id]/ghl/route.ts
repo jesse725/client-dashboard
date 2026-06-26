@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { fetchGHLPipelineStats, resolveApiKey } from '@/lib/ghl';
+import { fetchMetaAdStats } from '@/lib/meta';
 import { Client } from '@/types';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -27,15 +28,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const apiKey = resolveApiKey(client.ghl_api_key, agencyKey);
 
   try {
-    const stats = await fetchGHLPipelineStats(apiKey, client.ghl_location_id, client.ghl_pipeline_id, {
-      leads: client.stage_leads ?? undefined,
-      contacted: client.stage_contacted ?? undefined,
-      unqualified: client.stage_unqualified ?? undefined,
-      phone: client.stage_phone ?? undefined,
-      inhome: client.stage_inhome ?? undefined,
-    });
-    return NextResponse.json(stats);
+    const [pipeline, metaStats] = await Promise.all([
+      fetchGHLPipelineStats(apiKey, client.ghl_location_id, client.ghl_pipeline_id, {
+        leads: client.stage_leads ?? undefined,
+        contacted: client.stage_contacted ?? undefined,
+        unqualified: client.stage_unqualified ?? undefined,
+        phone: client.stage_phone ?? undefined,
+        inhome: client.stage_inhome ?? undefined,
+      }),
+      client.meta_access_token && client.meta_ad_account_id
+        ? fetchMetaAdStats(client.meta_access_token, client.meta_ad_account_id).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    return NextResponse.json({ pipeline, metaStats });
   } catch {
-    return NextResponse.json({ leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0 });
+    return NextResponse.json({ pipeline: { leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0 }, metaStats: null });
   }
 }

@@ -29,7 +29,7 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
     ad_spend: String(client.ad_spend),
     next_checkin: client.next_checkin ?? '',
     contract_url: client.contract_url ?? '',
-    slack_url: client.slack_url ?? '',
+
     meta_ad_account_id: client.meta_ad_account_id ?? '',
     meta_access_token: client.meta_access_token ?? '',
     ghl_api_key: client.ghl_api_key ?? '',
@@ -178,10 +178,6 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
             <div>
               <Label>Contract URL</Label>
               <input className="input" type="url" value={form.contract_url} onChange={(e) => set('contract_url', e.target.value)} placeholder="https://…" />
-            </div>
-            <div>
-              <Label>Slack Channel URL</Label>
-              <input className="input" type="url" value={form.slack_url} onChange={(e) => set('slack_url', e.target.value)} placeholder="https://app.slack.com/…" />
             </div>
           </div>
 

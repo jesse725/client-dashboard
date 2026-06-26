@@ -6,24 +6,58 @@ import Link from 'next/link';
 import { Client, Quote, PipelineStats } from '@/types';
 import { calcMetrics } from '@/lib/metrics';
 import {
-  ArrowLeft, RefreshCw, ExternalLink, FileText, MessageSquare,
+  ArrowLeft, RefreshCw, ExternalLink, FileText,
   TrendingUp, Users, PhoneCall, Home, XCircle, DollarSign,
-  Plus, CheckCircle, Clock, Settings,
+  Plus, CheckCircle, Clock, Settings, Target, BarChart2, Zap,
+  MousePointerClick, Eye, Activity,
 } from 'lucide-react';
 import QuoteModal from '@/components/QuoteModal';
 import EditClientModal from '@/components/EditClientModal';
 
-function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+// ─── Small reusable components ────────────────────────────────────────────────
+
+function SectionHeader({ icon, title, badge }: { icon: React.ReactNode; title: string; badge?: string }) {
   return (
-    <div className="card p-4">
-      <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{label}</p>
-      <p className="text-2xl font-bold" style={{ color: color ?? 'var(--text)' }}>{value}</p>
-      {sub && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+    <div className="flex items-center gap-3 mb-5">
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
+        <span style={{ color: 'var(--accent)' }}>{icon}</span>
+      </div>
+      <h2 className="font-semibold text-lg">{title}</h2>
+      {badge && (
+        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+          {badge}
+        </span>
+      )}
     </div>
   );
 }
 
-function FunnelBar({ label, count, max, color, icon }: { label: string; count: number; max: number; color: string; icon: React.ReactNode }) {
+function StatCard({ label, value, sub, color, icon }: {
+  label: string; value: string; sub?: string; color?: string; icon?: React.ReactNode;
+}) {
+  return (
+    <div className="card p-4 flex flex-col gap-1">
+      {icon && <span style={{ color: color ?? 'var(--text-muted)' }}>{icon}</span>}
+      <p className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <p className="text-2xl font-bold leading-none" style={{ color: color ?? 'var(--text)' }}>{value}</p>
+      {sub && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+    </div>
+  );
+}
+
+function HeroStat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  return (
+    <div className="card p-6 text-center">
+      <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <p className="text-4xl font-black leading-none mb-1" style={{ color: color ?? 'var(--accent)' }}>{value}</p>
+      {sub && <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+    </div>
+  );
+}
+
+function FunnelBar({ label, count, max, color, icon, rate }: {
+  label: string; count: number; max: number; color: string; icon: React.ReactNode; rate?: string;
+}) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div className="card-2 p-4">
@@ -37,22 +71,26 @@ function FunnelBar({ label, count, max, color, icon }: { label: string; count: n
       <div className="h-1.5 rounded-full" style={{ background: 'var(--border)' }}>
         <div className="h-1.5 rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: color }} />
       </div>
+      {rate && <p className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-muted)' }}>{rate}</p>}
     </div>
   );
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  open: '#f59e0b',
-  closed: '#22c55e',
-  lost: '#ef4444',
-};
+function RatePill({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="card-2 px-4 py-3 text-center">
+      <p className="text-xl font-bold" style={{ color: color ?? 'var(--accent)' }}>{value}</p>
+      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
+    </div>
+  );
+}
 
+const STATUS_COLORS: Record<string, string> = { open: '#f59e0b', closed: '#22c55e', lost: '#ef4444' };
 const STATUS_ICONS: Record<string, React.ReactNode> = {
-  open: <Clock size={12} />,
-  closed: <CheckCircle size={12} />,
-  lost: <XCircle size={12} />,
+  open: <Clock size={12} />, closed: <CheckCircle size={12} />, lost: <XCircle size={12} />,
 };
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ClientDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -62,6 +100,9 @@ export default function ClientDashboardPage() {
   const [client, setClient] = useState<Client | null>(null);
   const [pipeline, setPipeline] = useState<PipelineStats>({ leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0 });
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [metaStats, setMetaStats] = useState<{
+    spend: number; impressions: number; clicks: number; ctr: number; cpc: number; reach: number; frequency: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -91,19 +132,17 @@ export default function ClientDashboardPage() {
   const syncGHL = useCallback(async () => {
     setSyncing(true);
     const res = await fetch(`/api/clients/${clientId}/ghl`);
-    if (res.ok) { setPipeline(await res.json()); setLastSynced(new Date()); }
+    if (res.ok) {
+      const data = await res.json();
+      setPipeline(data.pipeline ?? data);
+      if (data.metaStats) setMetaStats(data.metaStats);
+      setLastSynced(new Date());
+    }
     setSyncing(false);
   }, [clientId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (client) syncGHL();
-  }, [client?.id, syncGHL]);
-
-  // Auto-sync every hour
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (client) syncGHL(); }, [client?.id, syncGHL]);
   useEffect(() => {
     const interval = setInterval(syncGHL, 60 * 60 * 1000);
     return () => clearInterval(interval);
@@ -112,38 +151,47 @@ export default function ClientDashboardPage() {
   if (loading || !client) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</div>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>
       </div>
     );
   }
 
-  const metrics = calcMetrics(client, quotes, pipeline);
-  const totalLeads = pipeline.leads;
+  const m = calcMetrics(client, quotes, pipeline);
+  const totalLeads = Math.max(pipeline.leads, 1);
+
+  // Use live Meta spend if available, else fall through to calcMetrics
+  const adSpend = metaStats?.spend ?? m.totalAdSpend;
+  const totalCost = adSpend + m.totalRetainer;
+  const roi = totalCost > 0 ? ((m.totalRevenue - totalCost) / totalCost) * 100 : 0;
+  const roas = adSpend > 0 ? m.totalRevenue / adSpend : 0;
+  const cpl = pipeline.leads > 0 ? adSpend / pipeline.leads : 0;
+
+  const totalQuoted = quotes.reduce((s, q) => s + q.value, 0);
+  const openValue = quotes.filter(q => q.status === 'open').reduce((s, q) => s + q.value, 0);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
       {/* Nav */}
-      <nav className="border-b px-6 py-4 flex items-center justify-between sticky top-0 z-10" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      <nav className="border-b px-6 py-4 flex items-center justify-between sticky top-0 z-10"
+        style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="flex items-center gap-1.5 text-sm hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }}>
+          <Link href="/dashboard" className="flex items-center gap-1.5 text-sm hover:opacity-70 transition-opacity"
+            style={{ color: 'var(--text-muted)' }}>
             <ArrowLeft size={14} /> All Clients
           </Link>
           <span style={{ color: 'var(--border)' }}>|</span>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs" style={{ background: 'var(--accent)' }}>
+            <div className="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs"
+              style={{ background: 'var(--accent)' }}>
               {client.name.charAt(0).toUpperCase()}
             </div>
             <span className="font-semibold">{client.name}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {client.slack_url && (
-            <a href={client.slack_url} target="_blank" rel="noopener noreferrer" className="btn-ghost text-sm flex items-center gap-2">
-              <MessageSquare size={14} /> Slack
-            </a>
-          )}
           {client.contract_url && (
-            <a href={client.contract_url} target="_blank" rel="noopener noreferrer" className="btn-ghost text-sm flex items-center gap-2">
+            <a href={client.contract_url} target="_blank" rel="noopener noreferrer"
+              className="btn-ghost text-sm flex items-center gap-2">
               <FileText size={14} /> Contract
             </a>
           )}
@@ -159,87 +207,145 @@ export default function ClientDashboardPage() {
         </div>
       </nav>
 
-      <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+      <div className="max-w-6xl mx-auto px-6 py-8 space-y-10">
 
-        {/* Billing dates strip */}
-        {(client.date_launched || client.date_billed || client.rebilling_date) && (
-          <div className="flex flex-wrap gap-4 text-sm px-1">
-            {client.date_launched && (
+        {/* Date strip */}
+        {(client.date_launched || client.date_billed || client.rebilling_date || client.start_date) && (
+          <div className="flex flex-wrap gap-6 text-sm">
+            {client.start_date && (
               <span style={{ color: 'var(--text-muted)' }}>
-                Launched <span className="font-semibold" style={{ color: 'var(--text)' }}>{new Date(client.date_launched).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-              </span>
-            )}
-            {client.date_billed && (
-              <span style={{ color: 'var(--text-muted)' }}>
-                Last Billed <span className="font-semibold" style={{ color: 'var(--text)' }}>{new Date(client.date_billed).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                Partner since <span className="font-semibold" style={{ color: 'var(--text)' }}>
+                  {new Date(client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+                <span className="ml-2 font-semibold" style={{ color: 'var(--accent)' }}>· {m.daysTogether} days</span>
               </span>
             )}
             {client.rebilling_date && (
               <span style={{ color: 'var(--text-muted)' }}>
-                Rebills <span className="font-semibold" style={{ color: 'var(--yellow)' }}>{new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                Next billing <span className="font-semibold" style={{ color: 'var(--yellow)' }}>
+                  {new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
               </span>
             )}
           </div>
         )}
 
-        {/* Header stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          <MetricCard label="Days Together" value={`${metrics.daysTogether}`} sub={`${metrics.monthsWorked} month${metrics.monthsWorked !== 1 ? 's' : ''}`} color="var(--accent)" />
-          <MetricCard label="Ad Spend" value={`$${Math.round(metrics.totalAdSpend).toLocaleString()}`} sub={client.daily_ad_spend > 0 ? `$${client.daily_ad_spend}/day` : 'total'} />
-          <MetricCard label="CPL" value={metrics.cpl > 0 ? `$${Math.round(metrics.cpl).toLocaleString()}` : '—'} sub="cost per lead" />
-          <MetricCard label="Retainer" value={`$${client.retainer_price.toLocaleString()}`} sub="per month" />
-          <MetricCard label="Total Revenue" value={`$${metrics.totalRevenue.toLocaleString()}`} sub="from closed deals" color="var(--green)" />
-          <MetricCard
-            label="ROI"
-            value={`${metrics.roi >= 0 ? '+' : ''}${metrics.roi.toFixed(1)}%`}
-            sub="return on investment"
-            color={metrics.roi >= 0 ? 'var(--green)' : 'var(--red)'}
-          />
-          <MetricCard label="CAC" value={metrics.cac > 0 ? `$${Math.round(metrics.cac).toLocaleString()}` : '—'} sub="cost per customer" />
-          <MetricCard label="ROAS" value={`${metrics.roas.toFixed(2)}x`} sub="return on ad spend" color={metrics.roas >= 2 ? 'var(--green)' : 'var(--yellow)'} />
-        </div>
-
-        {/* Pipeline funnel */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-lg flex items-center gap-2">
-              <TrendingUp size={18} style={{ color: 'var(--accent)' }} /> Pipeline Funnel
-            </h2>
-            <span className="text-xs px-2 py-1 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-              {lastSynced ? `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Synced from GHL'}
-            </span>
+        {/* ─── SECTION 1: Ad Performance ────────────────────────────────── */}
+        <section>
+          <SectionHeader icon={<BarChart2 size={15} />} title="Ad Performance"
+            badge={metaStats ? 'Live from Meta' : client.daily_ad_spend > 0 ? 'Estimated' : 'Manual'} />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <StatCard
+              label="Ad Spend"
+              value={`$${Math.round(adSpend).toLocaleString()}`}
+              sub={metaStats ? 'all-time from Meta' : client.daily_ad_spend > 0 ? `$${client.daily_ad_spend}/day` : 'manual'}
+              color="var(--accent)"
+              icon={<DollarSign size={14} />}
+            />
+            <StatCard
+              label="CPL"
+              value={cpl > 0 ? `$${Math.round(cpl).toLocaleString()}` : '—'}
+              sub="cost per lead"
+              icon={<Target size={14} />}
+            />
+            {metaStats ? (
+              <>
+                <StatCard
+                  label="Impressions"
+                  value={metaStats.impressions >= 1000 ? `${(metaStats.impressions / 1000).toFixed(1)}k` : String(metaStats.impressions)}
+                  sub="total ad views"
+                  icon={<Eye size={14} />}
+                />
+                <StatCard
+                  label="Clicks"
+                  value={metaStats.clicks.toLocaleString()}
+                  sub="link clicks"
+                  icon={<MousePointerClick size={14} />}
+                />
+                <StatCard
+                  label="CTR"
+                  value={`${metaStats.ctr.toFixed(2)}%`}
+                  sub="click-through rate"
+                  color={metaStats.ctr >= 1 ? 'var(--green)' : metaStats.ctr >= 0.5 ? 'var(--yellow)' : 'var(--red)'}
+                  icon={<Activity size={14} />}
+                />
+                <StatCard
+                  label="CPC"
+                  value={`$${metaStats.cpc.toFixed(2)}`}
+                  sub="cost per click"
+                  icon={<Zap size={14} />}
+                />
+              </>
+            ) : (
+              <div className="col-span-4 card p-4 flex items-center justify-center text-sm"
+                style={{ color: 'var(--text-muted)', borderStyle: 'dashed' }}>
+                Connect Meta Ads in Edit → to see live impressions, clicks, CTR & CPC
+              </div>
+            )}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            <FunnelBar label="Leads Generated" count={pipeline.leads} max={totalLeads || 1} color="var(--accent)" icon={<Users size={14} />} />
-            <FunnelBar label="Contacted" count={pipeline.contacted} max={totalLeads || 1} color="#a78bfa" icon={<PhoneCall size={14} />} />
-            <FunnelBar label="Booked Phone" count={pipeline.phone} max={totalLeads || 1} color="var(--yellow)" icon={<PhoneCall size={14} />} />
-            <FunnelBar label="Booked In-Home" count={pipeline.inhome} max={totalLeads || 1} color="var(--green)" icon={<Home size={14} />} />
-            <FunnelBar label="Unqualified" count={pipeline.unqualified} max={totalLeads || 1} color="var(--red)" icon={<XCircle size={14} />} />
-          </div>
-        </div>
+        </section>
 
-        {/* Quotes section */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-lg flex items-center gap-2">
-              <DollarSign size={18} style={{ color: 'var(--accent)' }} /> Quotes & Deals
-            </h2>
-            <button onClick={() => { setEditingQuote(null); setShowQuote(true); }} className="btn-primary text-sm flex items-center gap-2">
+        {/* ─── SECTION 2: Follow-up Pipeline ───────────────────────────── */}
+        <section>
+          <SectionHeader icon={<TrendingUp size={15} />} title="Backend Follow-up"
+            badge={lastSynced ? `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'From GHL'} />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+            <FunnelBar label="Leads Generated" count={pipeline.leads} max={totalLeads} color="var(--accent)"
+              icon={<Users size={14} />} />
+            <FunnelBar label="Contacted" count={pipeline.contacted} max={totalLeads} color="#a78bfa"
+              icon={<PhoneCall size={14} />}
+              rate={pipeline.leads > 0 ? `${((pipeline.contacted / pipeline.leads) * 100).toFixed(1)}% contact rate` : undefined} />
+            <FunnelBar label="Phone Booked" count={pipeline.phone} max={totalLeads} color="var(--yellow)"
+              icon={<PhoneCall size={14} />}
+              rate={pipeline.leads > 0 ? `${((pipeline.phone / pipeline.leads) * 100).toFixed(1)}% of leads` : undefined} />
+            <FunnelBar label="In-Home Booked" count={pipeline.inhome} max={totalLeads} color="var(--green)"
+              icon={<Home size={14} />}
+              rate={pipeline.phone > 0 ? `${((pipeline.inhome / pipeline.phone) * 100).toFixed(1)}% of booked` : undefined} />
+            <FunnelBar label="Unqualified" count={pipeline.unqualified} max={totalLeads} color="var(--red)"
+              icon={<XCircle size={14} />} />
+          </div>
+          {/* Conversion rate pills */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <RatePill label="Contact Rate" value={`${m.contactRate.toFixed(1)}%`}
+              color={m.contactRate >= 50 ? 'var(--green)' : 'var(--yellow)'} />
+            <RatePill label="Lead → Phone" value={`${m.leadToBookRate.toFixed(1)}%`}
+              color={m.leadToBookRate >= 20 ? 'var(--green)' : 'var(--yellow)'} />
+            <RatePill label="Phone → In-Home" value={`${m.bookToHomeRate.toFixed(1)}%`}
+              color={m.bookToHomeRate >= 50 ? 'var(--green)' : 'var(--yellow)'} />
+            <RatePill label="In-Home → Close" value={`${m.homeToCloseRate.toFixed(1)}%`}
+              color={m.homeToCloseRate >= 30 ? 'var(--green)' : 'var(--yellow)'} />
+          </div>
+        </section>
+
+        {/* ─── SECTION 3: Sales ────────────────────────────────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
+                <DollarSign size={15} style={{ color: 'var(--accent)' }} />
+              </div>
+              <h2 className="font-semibold text-lg">Sales Results</h2>
+            </div>
+            <button onClick={() => { setEditingQuote(null); setShowQuote(true); }}
+              className="btn-primary text-sm flex items-center gap-2">
               <Plus size={14} /> Add Quote
             </button>
           </div>
 
-          {/* Compact summary */}
-          {quotes.length > 0 && (
-            <div className="flex items-center gap-4 mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-              <span style={{ color: 'var(--yellow)', fontWeight: 600 }}>{quotes.filter(q => q.status === 'open').length} open</span>
-              <span style={{ color: 'var(--green)', fontWeight: 600 }}>{quotes.filter(q => q.status === 'closed').length} closed</span>
-              <span style={{ color: 'var(--red)', fontWeight: 600 }}>{quotes.filter(q => q.status === 'lost').length} lost</span>
-              {metrics.totalRevenue > 0 && (
-                <span style={{ color: 'var(--text-muted)' }}>· ${metrics.totalRevenue.toLocaleString()} revenue</span>
-              )}
-            </div>
-          )}
+          {/* Sales summary stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <StatCard label="Total Quoted" value={`$${totalQuoted.toLocaleString()}`}
+              sub={`across ${quotes.length} quote${quotes.length !== 1 ? 's' : ''}`} />
+            <StatCard label="Pipeline Value" value={`$${openValue.toLocaleString()}`}
+              sub={`${quotes.filter(q => q.status === 'open').length} open quotes`}
+              color="var(--yellow)" />
+            <StatCard label="Revenue Closed" value={`$${m.totalRevenue.toLocaleString()}`}
+              sub={`${m.closedDeals} deal${m.closedDeals !== 1 ? 's' : ''} closed`}
+              color="var(--green)" />
+            <StatCard label="Close Rate" value={`${m.closeRateByCount.toFixed(1)}%`}
+              sub={`${m.closeRateByValue.toFixed(1)}% by value`}
+              color={m.closeRateByCount >= 30 ? 'var(--green)' : 'var(--yellow)'} />
+          </div>
 
           {quotes.length === 0 ? (
             <div className="card p-10 text-center">
@@ -261,17 +367,17 @@ export default function ClientDashboardPage() {
                 </thead>
                 <tbody>
                   {quotes.map((q, i) => (
-                    <tr
-                      key={q.id}
+                    <tr key={q.id}
                       style={{ borderBottom: i < quotes.length - 1 ? '1px solid var(--border)' : 'none' }}
-                      className="hover:bg-[var(--surface-2)] transition-colors"
-                    >
+                      className="hover:bg-[var(--surface-2)] transition-colors">
                       <td className="px-4 py-3 font-medium">{q.customer_name}</td>
-                      <td className="px-4 py-3 text-right font-semibold" style={{ color: q.status === 'closed' ? 'var(--green)' : 'var(--text)' }}>
+                      <td className="px-4 py-3 text-right font-semibold"
+                        style={{ color: q.status === 'closed' ? 'var(--green)' : 'var(--text)' }}>
                         ${q.value.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
                           {STATUS_ICONS[q.status]} {q.status}
                         </span>
                       </td>
@@ -284,15 +390,15 @@ export default function ClientDashboardPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 justify-end">
                           {q.drive_url && (
-                            <a href={q.drive_url} target="_blank" rel="noopener noreferrer" title="View quote" style={{ color: 'var(--text-muted)' }} className="hover:text-[var(--accent)] transition-colors">
+                            <a href={q.drive_url} target="_blank" rel="noopener noreferrer"
+                              title="View quote" style={{ color: 'var(--text-muted)' }}
+                              className="hover:text-[var(--accent)] transition-colors">
                               <ExternalLink size={13} />
                             </a>
                           )}
-                          <button
-                            onClick={() => { setEditingQuote(q); setShowQuote(true); }}
+                          <button onClick={() => { setEditingQuote(q); setShowQuote(true); }}
                             className="text-xs hover:opacity-70 transition-opacity"
-                            style={{ color: 'var(--text-muted)' }}
-                          >
+                            style={{ color: 'var(--text-muted)' }}>
                             Edit
                           </button>
                         </div>
@@ -303,8 +409,37 @@ export default function ClientDashboardPage() {
               </table>
             </div>
           )}
-        </div>
+        </section>
 
+        {/* ─── SECTION 4: ROI / ROAS / CAC ─────────────────────────────── */}
+        <section>
+          <SectionHeader icon={<Zap size={15} />} title="Performance Summary" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <HeroStat
+              label="Return on Investment"
+              value={`${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`}
+              sub={`$${Math.round(m.totalRevenue).toLocaleString()} revenue on $${Math.round(totalCost).toLocaleString()} invested`}
+              color={roi >= 0 ? 'var(--green)' : 'var(--red)'}
+            />
+            <HeroStat
+              label="Return on Ad Spend"
+              value={`${roas.toFixed(2)}x`}
+              sub={`$${roas.toFixed(2)} back for every $1 in ads`}
+              color={roas >= 3 ? 'var(--green)' : roas >= 1 ? 'var(--yellow)' : 'var(--red)'}
+            />
+            <HeroStat
+              label="Cost to Acquire Customer"
+              value={m.cac > 0 ? `$${Math.round(m.cac).toLocaleString()}` : '—'}
+              sub={m.cac > 0 ? `avg across ${m.closedDeals} customer${m.closedDeals !== 1 ? 's' : ''}` : 'No closed deals yet'}
+            />
+          </div>
+          {/* Retainer context */}
+          <div className="mt-3 flex flex-wrap gap-4 text-xs px-1" style={{ color: 'var(--text-muted)' }}>
+            <span>Retainer <span className="font-semibold" style={{ color: 'var(--text)' }}>${client.retainer_price.toLocaleString()}/mo · ${Math.round(m.totalRetainer).toLocaleString()} total</span></span>
+            <span>Ad Spend <span className="font-semibold" style={{ color: 'var(--text)' }}>${Math.round(adSpend).toLocaleString()} total</span></span>
+            <span>Total Invested <span className="font-semibold" style={{ color: 'var(--text)' }}>${Math.round(totalCost).toLocaleString()}</span></span>
+          </div>
+        </section>
 
       </div>
 
@@ -314,18 +449,12 @@ export default function ClientDashboardPage() {
           quote={editingQuote}
           onClose={() => { setShowQuote(false); setEditingQuote(null); }}
           onSaved={(q) => {
-            setQuotes((prev) =>
-              editingQuote
-                ? prev.map((x) => (x.id === q.id ? q : x))
-                : [q, ...prev]
-            );
-            setShowQuote(false);
-            setEditingQuote(null);
+            setQuotes((prev) => editingQuote ? prev.map((x) => (x.id === q.id ? q : x)) : [q, ...prev]);
+            setShowQuote(false); setEditingQuote(null);
           }}
           onDeleted={(id) => {
             setQuotes((prev) => prev.filter((x) => x.id !== id));
-            setShowQuote(false);
-            setEditingQuote(null);
+            setShowQuote(false); setEditingQuote(null);
           }}
         />
       )}
