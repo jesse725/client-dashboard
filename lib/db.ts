@@ -138,6 +138,18 @@ function initSchema(db: Database.Database) {
   if (!colNames.includes('onboard_status')) {
     db.exec("ALTER TABLE clients ADD COLUMN onboard_status TEXT NOT NULL DEFAULT 'active'");
   }
+  if (!colNames.includes('client_status')) {
+    db.exec("ALTER TABLE clients ADD COLUMN client_status TEXT NOT NULL DEFAULT 'Active'");
+  }
+  if (!colNames.includes('internal_notes')) {
+    db.exec('ALTER TABLE clients ADD COLUMN internal_notes TEXT');
+  }
+  if (!colNames.includes('cached_leads')) {
+    db.exec('ALTER TABLE clients ADD COLUMN cached_leads INTEGER DEFAULT 0');
+  }
+  if (!colNames.includes('cached_inhome')) {
+    db.exec('ALTER TABLE clients ADD COLUMN cached_inhome INTEGER DEFAULT 0');
+  }
 
   // Seed default admin if none exists
   const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');

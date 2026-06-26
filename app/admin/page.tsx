@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Plus, X, RefreshCw, CheckCircle, AlertCircle,
-  Clock, Settings2, Key, Users, ChevronDown, FileInput, Copy, ExternalLink,
+  Clock, Settings2, Key, Users, ChevronDown, FileInput, Copy, ExternalLink, BarChart2,
 } from 'lucide-react';
 import StageMappingModal from '@/components/StageMappingModal';
 
@@ -137,9 +137,14 @@ export default function AdminPage() {
           <span style={{ color: 'var(--border)' }}>|</span>
           <span className="font-semibold flex items-center gap-2"><Settings2 size={16} style={{ color: 'var(--accent)' }} /> Admin Settings</span>
         </div>
-        <Link href="/admin/onboard" className="btn-primary text-sm flex items-center gap-2">
-          <Plus size={14} /> Onboard Client
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/tracker" className="btn-ghost text-sm flex items-center gap-2">
+            <BarChart2 size={14} /> Client Tracker
+          </Link>
+          <Link href="/admin/onboard" className="btn-primary text-sm flex items-center gap-2">
+            <Plus size={14} /> Onboard Client
+          </Link>
+        </div>
       </nav>
 
       <div className="max-w-5xl mx-auto px-6 py-8">

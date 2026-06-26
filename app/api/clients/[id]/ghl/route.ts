@@ -40,6 +40,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         ? fetchMetaAdStats(client.meta_access_token, client.meta_ad_account_id).catch(() => null)
         : Promise.resolve(null),
     ]);
+    // Cache pipeline counts for tracker view
+    db.prepare('UPDATE clients SET cached_leads = ?, cached_inhome = ? WHERE id = ?')
+      .run(pipeline.leads ?? 0, pipeline.inhome ?? 0, id);
+
     return NextResponse.json({ pipeline, metaStats });
   } catch {
     return NextResponse.json({ pipeline: { leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0 }, metaStats: null });
