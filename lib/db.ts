@@ -150,6 +150,12 @@ function initSchema(db: Database.Database) {
   if (!colNames.includes('cached_inhome')) {
     db.exec('ALTER TABLE clients ADD COLUMN cached_inhome INTEGER DEFAULT 0');
   }
+  if (!colNames.includes('checkin_count')) {
+    db.exec('ALTER TABLE clients ADD COLUMN checkin_count INTEGER DEFAULT 0');
+  }
+  if (!colNames.includes('testimonial_collected')) {
+    db.exec('ALTER TABLE clients ADD COLUMN testimonial_collected INTEGER DEFAULT 0');
+  }
 
   // Seed default admin if none exists
   const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');

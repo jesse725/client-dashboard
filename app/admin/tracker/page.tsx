@@ -4,9 +4,9 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Users, DollarSign, TrendingUp, Home, Calendar,
-  ChevronRight, AlertTriangle, CheckCircle, Clock, Pause, XCircle,
-  StickyNote, BarChart2,
+  ArrowLeft, DollarSign, TrendingUp, Users, Star, Phone,
+  AlertTriangle, CheckCircle, Clock, XCircle, ChevronRight,
+  Plus, Minus, Home, BarChart2, Pause,
 } from 'lucide-react';
 
 interface ClientRow {
@@ -21,28 +21,34 @@ interface ClientRow {
   next_checkin: string | null;
   rebilling_date: string | null;
   contact_name: string | null;
-  stage_inhome: string | null;
+  checkin_count: number;
+  testimonial_collected: number;
   cached_leads: number;
   cached_inhome: number;
-  // aggregated
   total_quotes: number;
   total_quoted_value: number;
   closed_deals: number;
   revenue_closed: number;
+  days_as_client: number;
+  total_payments_received: number;
 }
 
-const STATUSES = ['Active', 'Onboarding', 'At Risk', 'Paused', 'Churned'];
+const STAGES = [
+  { key: 'Onboarding', label: 'Onboarding',  icon: <Clock size={13} />,         color: '#6c63ff', desc: 'Setting up & getting started' },
+  { key: 'Launched',   label: 'Launched',     icon: <TrendingUp size={13} />,    color: '#38bdf8', desc: 'Ads live, results incoming' },
+  { key: 'Active',     label: 'Active',       icon: <CheckCircle size={13} />,   color: '#22c55e', desc: 'Running strong' },
+  { key: 'At Risk',    label: 'At Risk',      icon: <AlertTriangle size={13} />, color: '#f59e0b', desc: 'Needs attention' },
+  { key: 'Paused',     label: 'Paused',       icon: <Pause size={13} />,         color: '#94a3b8', desc: 'Temporarily on hold' },
+  { key: 'Churned',    label: 'Churned',      icon: <XCircle size={13} />,       color: '#ef4444', desc: 'No longer active' },
+];
 
-const STATUS_META: Record<string, { color: string; bg: string; icon: React.ReactNode }> = {
-  Active:     { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   icon: <CheckCircle size={11} /> },
-  Onboarding: { color: '#6c63ff', bg: 'rgba(108,99,255,0.12)', icon: <Clock size={11} /> },
-  'At Risk':  { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: <AlertTriangle size={11} /> },
-  Paused:     { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)',icon: <Pause size={11} /> },
-  Churned:    { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   icon: <XCircle size={11} /> },
-};
+function fmt$(n: number) {
+  if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `$${(n / 1000).toFixed(0)}k`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
 
-function tenure(startDate: string): string {
-  const days = Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000);
+function tenure(days: number) {
   if (days < 30) return `${days}d`;
   if (days < 365) return `${Math.floor(days / 30)}mo`;
   const y = Math.floor(days / 365);
@@ -50,17 +56,132 @@ function tenure(startDate: string): string {
   return m > 0 ? `${y}y ${m}mo` : `${y}y`;
 }
 
-function fmt$(n: number) {
-  if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `$${(n / 1000).toFixed(0)}k`;
-  return `$${n.toFixed(0)}`;
-}
+function ClientCard({ c, onUpdate }: { c: ClientRow; onUpdate: (id: number, patch: Partial<ClientRow>) => void }) {
+  const closeRate = c.total_quotes > 0 ? (c.closed_deals / c.total_quotes) * 100 : 0;
+  const totalAdSpend = c.ad_spend || (c.daily_ad_spend * c.days_as_client);
+  const isCheckinOverdue = c.next_checkin && new Date(c.next_checkin) < new Date();
+  const daysUntilBilling = c.rebilling_date
+    ? Math.ceil((new Date(c.rebilling_date).getTime() - Date.now()) / 86400000)
+    : null;
 
-function StatPill({ label, value, color }: { label: string; value: string; color?: string }) {
+  async function patch(update: Partial<ClientRow>) {
+    onUpdate(c.id, update);
+    await fetch('/api/admin/overview', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: c.id, ...update }),
+    });
+  }
+
   return (
-    <div className="text-center">
-      <div className="text-sm font-bold" style={{ color: color ?? 'var(--text)' }}>{value}</div>
-      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</div>
+    <div className="card p-4 space-y-3 text-sm">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-md flex items-center justify-center text-white font-bold text-xs shrink-0"
+            style={{ background: 'var(--accent)' }}>
+            {c.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold truncate">{c.name}</p>
+            {c.contact_name && <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.contact_name}</p>}
+          </div>
+        </div>
+        <Link href={`/dashboard/${c.id}`} className="shrink-0 hover:opacity-70" style={{ color: 'var(--text-muted)' }}>
+          <ChevronRight size={14} />
+        </Link>
+      </div>
+
+      {/* Tenure + billing */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+          🕐 {tenure(c.days_as_client)}
+        </span>
+        {daysUntilBilling !== null && daysUntilBilling <= 7 && (
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+            💳 Bill in {daysUntilBilling}d
+          </span>
+        )}
+        {c.testimonial_collected ? (
+          <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+            <Star size={9} fill="#22c55e" /> Testimonial
+          </span>
+        ) : null}
+      </div>
+
+      {/* Core agency stats */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg p-2.5 space-y-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Retainer</p>
+          <p className="font-bold" style={{ color: 'var(--accent)' }}>{fmt$(c.retainer_price || 0)}/mo</p>
+        </div>
+        <div className="rounded-lg p-2.5 space-y-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Total Paid</p>
+          <p className="font-bold" style={{ color: 'var(--green)' }}>{fmt$(c.total_payments_received || 0)}</p>
+        </div>
+        <div className="rounded-lg p-2.5 space-y-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Ad Spend Mgd</p>
+          <p className="font-bold">{fmt$(totalAdSpend)}</p>
+        </div>
+        <div className="rounded-lg p-2.5 space-y-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Revenue Won</p>
+          <p className="font-bold" style={{ color: 'var(--green)' }}>{fmt$(c.revenue_closed)}</p>
+        </div>
+      </div>
+
+      {/* Results pipeline */}
+      <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+        <span className="flex items-center gap-1"><Users size={10} /> {c.cached_leads > 0 ? c.cached_leads : '—'} leads</span>
+        <span className="opacity-40 mx-0.5">→</span>
+        <span className="flex items-center gap-1"><Home size={10} /> {c.cached_inhome > 0 ? c.cached_inhome : '—'} in-home</span>
+        <span className="opacity-40 mx-0.5">→</span>
+        <span className="flex items-center gap-1" style={{ color: closeRate >= 30 ? 'var(--green)' : 'var(--text-muted)' }}>
+          <CheckCircle size={10} /> {c.closed_deals} closed
+          {c.total_quotes > 0 && <span className="ml-0.5">({closeRate.toFixed(0)}%)</span>}
+        </span>
+      </div>
+
+      {/* Check-in tracker */}
+      <div className="flex items-center justify-between rounded-lg p-2.5"
+        style={{ background: 'var(--surface-2)', border: `1px solid ${isCheckinOverdue ? '#f59e0b44' : 'var(--border)'}` }}>
+        <div className="flex items-center gap-1.5">
+          <Phone size={11} style={{ color: isCheckinOverdue ? '#f59e0b' : 'var(--text-muted)' }} />
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {isCheckinOverdue ? <span style={{ color: '#f59e0b' }}>Overdue check-in · </span> : ''}
+            {c.checkin_count} call{c.checkin_count !== 1 ? 's' : ''} completed
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => patch({ checkin_count: Math.max(0, c.checkin_count - 1) })}
+            className="w-5 h-5 rounded flex items-center justify-center hover:opacity-70"
+            style={{ background: 'var(--border)', color: 'var(--text-muted)' }}>
+            <Minus size={9} />
+          </button>
+          <button onClick={() => patch({ checkin_count: c.checkin_count + 1 })}
+            className="w-5 h-5 rounded flex items-center justify-center hover:opacity-70"
+            style={{ background: 'var(--accent)', color: '#fff' }}>
+            <Plus size={9} />
+          </button>
+        </div>
+      </div>
+
+      {/* Testimonial toggle */}
+      <button
+        onClick={() => patch({ testimonial_collected: c.testimonial_collected ? 0 : 1 })}
+        className="w-full text-xs py-1.5 rounded-lg flex items-center justify-center gap-1.5 hover:opacity-80 transition-all"
+        style={{
+          background: c.testimonial_collected ? 'rgba(34,197,94,0.12)' : 'var(--surface-2)',
+          color: c.testimonial_collected ? '#22c55e' : 'var(--text-muted)',
+          border: `1px solid ${c.testimonial_collected ? '#22c55e44' : 'var(--border)'}`,
+        }}>
+        <Star size={11} fill={c.testimonial_collected ? '#22c55e' : 'none'} />
+        {c.testimonial_collected ? 'Testimonial Collected' : 'Mark Testimonial Collected'}
+      </button>
+
+      {/* Internal note */}
+      {c.internal_notes && (
+        <p className="text-xs italic" style={{ color: 'var(--text-muted)' }}>💬 {c.internal_notes}</p>
+      )}
     </div>
   );
 }
@@ -70,59 +191,43 @@ export default function TrackerPage() {
   const router = useRouter();
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>('All');
-  const [editingNote, setEditingNote] = useState<number | null>(null);
-  const [noteText, setNoteText] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
+  const [dragging, setDragging] = useState<number | null>(null);
 
   useEffect(() => {
     const user = session?.user as any;
-    if (status === 'unauthenticated' || (session && user?.role !== 'admin')) {
-      router.push('/login');
-    }
+    if (status === 'unauthenticated' || (session && user?.role !== 'admin')) router.push('/login');
   }, [status, session, router]);
 
   useEffect(() => {
     if (status !== 'authenticated') return;
-    fetch('/api/admin/overview')
-      .then(r => r.json())
-      .then(data => { setClients(Array.isArray(data) ? data : []); setLoading(false); });
+    fetch('/api/admin/overview').then(r => r.json()).then(data => {
+      setClients(Array.isArray(data) ? data : []);
+      setLoading(false);
+    });
   }, [status]);
 
-  async function updateStatus(id: number, client_status: string) {
-    setClients(cs => cs.map(c => c.id === id ? { ...c, client_status } : c));
-    await fetch('/api/admin/overview', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, client_status }),
-    });
+  function handleUpdate(id: number, patch: Partial<ClientRow>) {
+    setClients(cs => cs.map(c => c.id === id ? { ...c, ...patch } : c));
   }
 
-  async function saveNote(id: number) {
-    setSavingNote(true);
-    setClients(cs => cs.map(c => c.id === id ? { ...c, internal_notes: noteText } : c));
+  async function moveToStage(clientId: number, stage: string) {
+    handleUpdate(clientId, { client_status: stage } as any);
     await fetch('/api/admin/overview', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, internal_notes: noteText }),
+      body: JSON.stringify({ id: clientId, client_status: stage }),
     });
-    setSavingNote(false);
-    setEditingNote(null);
   }
 
   const active = clients.filter(c => c.client_status !== 'Churned');
-  const shown = filter === 'All' ? clients : clients.filter(c => c.client_status === filter);
-
   const totalMRR = active.reduce((s, c) => s + (c.retainer_price || 0), 0);
   const totalRevenue = clients.reduce((s, c) => s + c.revenue_closed, 0);
-  const totalQuoted = clients.reduce((s, c) => s + c.total_quoted_value, 0);
-  const totalClosed = clients.reduce((s, c) => s + c.closed_deals, 0);
-  const totalJobs = clients.reduce((s, c) => s + c.total_quotes, 0);
-  const overallCloseRate = totalJobs > 0 ? (totalClosed / totalJobs) * 100 : 0;
+  const totalPaid = clients.reduce((s, c) => s + (c.total_payments_received || 0), 0);
+  const atRisk = clients.filter(c => c.client_status === 'At Risk').length;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
-      <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading tracker…</div>
+      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading tracker…</p>
     </div>
   );
 
@@ -131,194 +236,103 @@ export default function TrackerPage() {
       {/* Nav */}
       <nav className="border-b px-6 py-4 flex items-center gap-4 sticky top-0 z-10"
         style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <Link href="/admin" className="flex items-center gap-1.5 text-sm hover:opacity-70"
-          style={{ color: 'var(--text-muted)' }}>
+        <Link href="/admin" className="flex items-center gap-1.5 text-sm hover:opacity-70" style={{ color: 'var(--text-muted)' }}>
           <ArrowLeft size={14} /> Admin
         </Link>
         <span style={{ color: 'var(--border)' }}>|</span>
-        <span className="font-semibold">Client Tracker</span>
-        <div className="ml-auto flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-          <Users size={13} />
-          <span>{active.length} active · {clients.filter(c => c.client_status === 'Churned').length} churned</span>
-        </div>
+        <span className="font-semibold flex items-center gap-2">
+          <BarChart2 size={15} style={{ color: 'var(--accent)' }} /> Client Tracker
+        </span>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-
-        {/* ── Summary Tiles ───────────────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="px-6 py-6 space-y-6">
+        {/* ── Agency Summary ───────────────────────────── */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
-            { label: 'Active Clients',  value: String(active.length),            icon: <Users size={14} />,      color: 'var(--accent)' },
-            { label: 'Monthly Retainer',value: fmt$(totalMRR),                   icon: <DollarSign size={14} />, color: 'var(--green)' },
-            { label: 'Revenue Generated',value: fmt$(totalRevenue),              icon: <TrendingUp size={14} />, color: 'var(--green)' },
-            { label: 'Total Quoted',    value: fmt$(totalQuoted),                icon: <BarChart2 size={14} />,  color: 'var(--yellow)' },
-            { label: 'Jobs Closed',     value: `${totalClosed} / ${totalJobs}`,  icon: <CheckCircle size={14} />,color: 'var(--green)' },
-            { label: 'Avg Close Rate',  value: `${overallCloseRate.toFixed(1)}%`,icon: <TrendingUp size={14} />, color: overallCloseRate >= 30 ? 'var(--green)' : 'var(--yellow)' },
+            { label: 'Active Clients',     value: String(active.length),     icon: <Users size={14} />,       color: 'var(--accent)' },
+            { label: 'Monthly Retainer',   value: fmt$(totalMRR),            icon: <DollarSign size={14} />,  color: 'var(--green)' },
+            { label: 'Total Collected',    value: fmt$(totalPaid),           icon: <DollarSign size={14} />,  color: 'var(--green)' },
+            { label: 'Revenue Generated',  value: fmt$(totalRevenue),        icon: <TrendingUp size={14} />,  color: 'var(--green)' },
+            { label: 'At Risk',            value: String(atRisk),            icon: <AlertTriangle size={14}/>, color: atRisk > 0 ? '#f59e0b' : 'var(--text-muted)' },
           ].map(s => (
-            <div key={s.label} className="card p-4">
-              <div className="flex items-center gap-2 mb-2" style={{ color: s.color }}>
+            <div key={s.label} className="card p-4 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: `${s.color}22`, color: s.color }}>
                 {s.icon}
-                <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{s.label}</span>
               </div>
-              <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
+              <div>
+                <p className="text-xl font-bold leading-none" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
+              </div>
             </div>
           ))}
         </div>
 
-        {/* ── Status Filter ────────────────────────────────────────── */}
-        <div className="flex gap-2 flex-wrap">
-          {['All', ...STATUSES].map(s => {
-            const meta = STATUS_META[s];
-            const count = s === 'All' ? clients.length : clients.filter(c => c.client_status === s).length;
+        {/* ── Kanban Board ─────────────────────────────── */}
+        <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: 600 }}>
+          {STAGES.map(stage => {
+            const stageClients = clients.filter(c => c.client_status === stage.key);
             return (
-              <button
-                key={s}
-                onClick={() => setFilter(s)}
-                className="text-sm px-3 py-1.5 rounded-full font-medium transition-all flex items-center gap-1.5"
+              <div
+                key={stage.key}
+                className="shrink-0 flex flex-col rounded-xl"
                 style={{
-                  background: filter === s ? (meta?.bg ?? 'var(--accent)22') : 'var(--surface-2)',
-                  color: filter === s ? (meta?.color ?? 'var(--accent)') : 'var(--text-muted)',
-                  border: `1px solid ${filter === s ? (meta?.color ?? 'var(--accent)') : 'var(--border)'}`,
-                }}>
-                {meta?.icon} {s} <span className="opacity-60">({count})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ── Client Cards ─────────────────────────────────────────── */}
-        <div className="space-y-3">
-          {shown.length === 0 && (
-            <div className="card p-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-              No clients in this category.
-            </div>
-          )}
-          {shown.map(c => {
-            const closeRate = c.total_quotes > 0 ? (c.closed_deals / c.total_quotes) * 100 : 0;
-            const statusMeta = STATUS_META[c.client_status] ?? STATUS_META['Active'];
-            const isOverdue = c.next_checkin && new Date(c.next_checkin) < new Date();
-            const daysUntilBilling = c.rebilling_date
-              ? Math.ceil((new Date(c.rebilling_date).getTime() - Date.now()) / 86400000)
-              : null;
-
-            return (
-              <div key={c.id} className="card p-5">
-                <div className="flex items-start gap-4">
-
-                  {/* Avatar */}
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0"
-                    style={{ background: 'var(--accent)' }}>
-                    {c.name.charAt(0).toUpperCase()}
-                  </div>
-
-                  {/* Main info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="font-semibold text-base">{c.name}</span>
-
-                      {/* Status badge — clickable dropdown */}
-                      <div className="relative group">
-                        <button
-                          className="text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5 cursor-pointer"
-                          style={{ background: statusMeta.bg, color: statusMeta.color, border: `1px solid ${statusMeta.color}44` }}>
-                          {statusMeta.icon} {c.client_status}
-                        </button>
-                        <div className="absolute left-0 top-full mt-1 z-20 hidden group-hover:flex flex-col rounded-lg overflow-hidden shadow-lg"
-                          style={{ background: 'var(--surface)', border: '1px solid var(--border)', minWidth: 130 }}>
-                          {STATUSES.map(s => (
-                            <button key={s} onClick={() => updateStatus(c.id, s)}
-                              className="text-left text-xs px-3 py-2 flex items-center gap-2 hover:opacity-80"
-                              style={{ color: STATUS_META[s].color, background: c.client_status === s ? STATUS_META[s].bg : 'transparent' }}>
-                              {STATUS_META[s].icon} {s}
-                            </button>
-                          ))}
-                        </div>
+                  width: 280,
+                  background: 'var(--surface)',
+                  border: `1px solid var(--border)`,
+                }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  e.preventDefault();
+                  if (dragging !== null) moveToStage(dragging, stage.key);
+                  setDragging(null);
+                }}
+              >
+                {/* Column header */}
+                <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded flex items-center justify-center"
+                        style={{ background: `${stage.color}22`, color: stage.color }}>
+                        {stage.icon}
                       </div>
-
-                      {/* Tenure */}
-                      <span className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                        🕐 {tenure(c.start_date)} with us
-                      </span>
-
-                      {/* Billing alert */}
-                      {daysUntilBilling !== null && daysUntilBilling <= 7 && (
-                        <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1"
-                          style={{ background: 'rgba(245,158,11,0.12)', color: 'var(--yellow)' }}>
-                          <Calendar size={10} /> Bill in {daysUntilBilling}d
-                        </span>
-                      )}
+                      <span className="font-semibold text-sm">{stage.label}</span>
                     </div>
-
-                    {c.contact_name && (
-                      <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>Contact: {c.contact_name}</p>
-                    )}
-
-                    {/* Stats row */}
-                    <div className="grid grid-cols-3 md:grid-cols-7 gap-4 p-3 rounded-lg mb-3"
-                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                      <StatPill label="Monthly Retainer" value={`$${(c.retainer_price || 0).toLocaleString()}`} color="var(--accent)" />
-                      <StatPill label="Jobs Quoted" value={`${c.total_quotes}`} />
-                      <StatPill label="Value Quoted" value={fmt$(c.total_quoted_value)} color="var(--yellow)" />
-                      <StatPill label="Leads" value={c.cached_leads > 0 ? String(c.cached_leads) : '—'} color="var(--accent)" />
-                      <StatPill label="In-Home Consults" value={c.cached_inhome > 0 ? String(c.cached_inhome) : '—'} color="var(--yellow)" />
-                      <StatPill label="Revenue Closed" value={fmt$(c.revenue_closed)} color="var(--green)" />
-                      <StatPill
-                        label="Close Rate"
-                        value={c.total_quotes > 0 ? `${closeRate.toFixed(0)}%` : '—'}
-                        color={closeRate >= 30 ? 'var(--green)' : closeRate > 0 ? 'var(--yellow)' : undefined}
-                      />
-                    </div>
-
-                    {/* Next check-in + internal notes */}
-                    <div className="flex items-center gap-4 flex-wrap">
-                      {c.next_checkin && (
-                        <span className="text-xs flex items-center gap-1"
-                          style={{ color: isOverdue ? 'var(--red)' : 'var(--text-muted)' }}>
-                          <Calendar size={11} />
-                          {isOverdue ? 'Overdue check-in · ' : 'Next check-in · '}
-                          {new Date(c.next_checkin).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </span>
-                      )}
-                      {editingNote === c.id ? (
-                        <div className="flex items-center gap-2 flex-1">
-                          <input
-                            autoFocus
-                            className="input text-xs flex-1"
-                            value={noteText}
-                            onChange={e => setNoteText(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') saveNote(c.id); if (e.key === 'Escape') setEditingNote(null); }}
-                            placeholder="Internal note…"
-                          />
-                          <button onClick={() => saveNote(c.id)} disabled={savingNote}
-                            className="btn-primary text-xs px-3 py-1.5">Save</button>
-                          <button onClick={() => setEditingNote(null)} className="btn-ghost text-xs px-3 py-1.5">Cancel</button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { setEditingNote(c.id); setNoteText(c.internal_notes ?? ''); }}
-                          className="text-xs flex items-center gap-1 hover:opacity-70"
-                          style={{ color: c.internal_notes ? 'var(--text-muted)' : 'var(--text-muted)', opacity: c.internal_notes ? 1 : 0.5 }}>
-                          <StickyNote size={11} />
-                          {c.internal_notes ? c.internal_notes : 'Add internal note'}
-                        </button>
-                      )}
-                    </div>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{ background: `${stage.color}22`, color: stage.color }}>
+                      {stageClients.length}
+                    </span>
                   </div>
-
-                  {/* Right actions */}
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <Link href={`/dashboard/${c.id}`}
-                      className="btn-ghost text-xs flex items-center gap-1.5">
-                      Dashboard <ChevronRight size={12} />
-                    </Link>
-                    {c.rebilling_date && (
-                      <span className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
-                        Renews {new Date(c.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
-                    )}
-                  </div>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{stage.desc}</p>
                 </div>
+
+                {/* Cards */}
+                <div className="flex-1 p-3 space-y-3 overflow-y-auto">
+                  {stageClients.length === 0 && (
+                    <div className="text-center py-8 text-xs" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>
+                      No clients
+                    </div>
+                  )}
+                  {stageClients.map(c => (
+                    <div
+                      key={c.id}
+                      draggable
+                      onDragStart={() => setDragging(c.id)}
+                      onDragEnd={() => setDragging(null)}
+                      className="cursor-grab active:cursor-grabbing"
+                    >
+                      <ClientCard c={c} onUpdate={handleUpdate} />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Drop hint */}
+                {dragging !== null && !stageClients.find(c => c.id === dragging) && (
+                  <div className="mx-3 mb-3 border-2 border-dashed rounded-xl p-3 text-center text-xs"
+                    style={{ borderColor: stage.color, color: stage.color }}>
+                    Drop to move to {stage.label}
+                  </div>
+                )}
               </div>
             );
           })}
