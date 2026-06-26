@@ -115,6 +115,30 @@ function initSchema(db: Database.Database) {
   if (!colNames.includes('rebilling_date')) {
     db.exec('ALTER TABLE clients ADD COLUMN rebilling_date TEXT');
   }
+  // Google Forms onboarding fields
+  if (!colNames.includes('contact_name')) {
+    db.exec('ALTER TABLE clients ADD COLUMN contact_name TEXT');
+  }
+  if (!colNames.includes('contact_email')) {
+    db.exec('ALTER TABLE clients ADD COLUMN contact_email TEXT');
+  }
+  if (!colNames.includes('contact_phone')) {
+    db.exec('ALTER TABLE clients ADD COLUMN contact_phone TEXT');
+  }
+  if (!colNames.includes('address')) {
+    db.exec('ALTER TABLE clients ADD COLUMN address TEXT');
+  }
+  if (!colNames.includes('ein')) {
+    db.exec('ALTER TABLE clients ADD COLUMN ein TEXT');
+  }
+  if (!colNames.includes('target_locations')) {
+    db.exec('ALTER TABLE clients ADD COLUMN target_locations TEXT');
+  }
+  // 'pending' = came from form, needs setup. 'active' = fully configured.
+  if (!colNames.includes('onboard_status')) {
+    db.exec("ALTER TABLE clients ADD COLUMN onboard_status TEXT NOT NULL DEFAULT 'active'");
+  }
+
   // Seed default admin if none exists
   const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
   if (!adminExists) {

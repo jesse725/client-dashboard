@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, CheckCircle, Copy, Check, ExternalLink,
@@ -24,9 +24,20 @@ function SectionNote({ children }: { children: React.ReactNode }) {
   return <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>{children}</p>;
 }
 
-export default function OnboardPage() {
+export default function OnboardPageWrapper() {
+  return (
+    <Suspense>
+      <OnboardPage />
+    </Suspense>
+  );
+}
+
+function OnboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const prefillId = searchParams.get('prefill');
   const [step, setStep] = useState(0);
+  const [prefillData, setPrefillData] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<any>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -37,7 +48,7 @@ export default function OnboardPage() {
   const [stageError, setStageError] = useState('');
 
   const [form, setForm] = useState({
-    name: '',
+    name: prefillData?.name ?? '',
     start_date: new Date().toISOString().slice(0, 10),
     date_launched: '',
     retainer_price: '',
@@ -60,6 +71,17 @@ export default function OnboardPage() {
   });
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  // Pre-fill form from a pending Google Form submission
+  useEffect(() => {
+    if (!prefillId) return;
+    fetch(`/api/clients/${prefillId}`)
+      .then(r => r.json())
+      .then(data => {
+        setPrefillData(data);
+        setForm(f => ({ ...f, name: data.name ?? f.name }));
+      });
+  }, [prefillId]);
 
   async function fetchGHLStages() {
     if (!form.ghl_api_key || !form.ghl_location_id) {
@@ -117,6 +139,10 @@ export default function OnboardPage() {
     });
     if (res.ok) {
       setCreated(await res.json());
+      // If this was a pending form submission, delete the placeholder now
+      if (prefillId) {
+        await fetch(`/api/clients/${prefillId}`, { method: 'DELETE' });
+      }
     } else {
       alert('Something went wrong. Please try again.');
     }
@@ -269,6 +295,16 @@ export default function OnboardPage() {
                 <h2 className="font-semibold text-lg mb-1">Client Info</h2>
                 <SectionNote>Basic details about this client and when the relationship started.</SectionNote>
               </div>
+              {/* Pre-filled data banner */}
+              {prefillData && (
+                <div className="rounded-lg p-4 text-sm space-y-1" style={{ background: 'rgba(108,99,255,0.1)', border: '1px solid rgba(108,99,255,0.3)' }}>
+                  <p className="font-semibold" style={{ color: 'var(--accent)' }}>📋 Pre-filled from Google Form submission</p>
+                  {prefillData.contact_name && <p style={{ color: 'var(--text-muted)' }}>Contact: <span style={{ color: 'var(--text)' }}>{prefillData.contact_name}</span>{prefillData.contact_email ? ` · ${prefillData.contact_email}` : ''}{prefillData.contact_phone ? ` · ${prefillData.contact_phone}` : ''}</p>}
+                  {prefillData.address && <p style={{ color: 'var(--text-muted)' }}>Address: <span style={{ color: 'var(--text)' }}>{prefillData.address}</span></p>}
+                  {prefillData.ein && <p style={{ color: 'var(--text-muted)' }}>EIN: <span style={{ color: 'var(--text)' }}>{prefillData.ein}</span></p>}
+                  {prefillData.target_locations && <p style={{ color: 'var(--text-muted)' }}>Target areas: <span style={{ color: 'var(--text)' }}>{prefillData.target_locations}</span></p>}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label>Client / Business Name</Label>

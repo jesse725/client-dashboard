@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Plus, X, RefreshCw, CheckCircle, AlertCircle,
-  Clock, Settings2, Key, Users, ChevronDown,
+  Clock, Settings2, Key, Users, ChevronDown, FileInput, Copy, ExternalLink,
 } from 'lucide-react';
 import StageMappingModal from '@/components/StageMappingModal';
 
 interface UserRow { id: number; email: string; name: string; role: string; client_id: number | null }
 interface ClientOption { id: number; name: string; ghl_location_id: string | null }
+interface PendingClient {
+  id: number; name: string; contact_name: string | null; contact_email: string | null;
+  contact_phone: string | null; address: string | null; ein: string | null;
+  target_locations: string | null; created_at: string;
+}
 interface SyncLog {
   id: number; started_at: string; finished_at: string | null;
   status: 'running' | 'success' | 'error';
@@ -36,7 +41,9 @@ export default function AdminPage() {
   const [userForm, setUserForm] = useState({ email: '', name: '', password: '', role: 'client', client_id: '' });
   const [savingUser, setSavingUser] = useState(false);
   const [mappingClient, setMappingClient] = useState<ClientOption | null>(null);
-  const [activeTab, setActiveTab] = useState<'sync' | 'users'>('sync');
+  const [pendingClients, setPendingClients] = useState<PendingClient[]>([]);
+  const [activeTab, setActiveTab] = useState<'sync' | 'users' | 'forms'>('sync');
+  const [copied, setCopied] = useState(false);
 
   const user = session?.user as any;
 
@@ -55,7 +62,9 @@ export default function AdminPage() {
     ]);
     const [u, c, s, settings] = await Promise.all([ur.json(), cr.json(), sr.json(), settingsR.json()]);
     setUsers(u);
-    setClients(Array.isArray(c) ? c : []);
+    const allClients = Array.isArray(c) ? c : [];
+    setClients(allClients.filter((x: any) => x.onboard_status !== 'pending'));
+    setPendingClients(allClients.filter((x: any) => x.onboard_status === 'pending'));
     setSyncLogs(s.logs ?? []);
     setLastSync(s.lastSync ?? null);
     setAgencyKey(settings.ghl_agency_key ?? '');
@@ -136,14 +145,26 @@ export default function AdminPage() {
       <div className="max-w-5xl mx-auto px-6 py-8">
         {/* Tabs */}
         <div className="flex gap-1 mb-8 p-1 rounded-xl w-fit" style={{ background: 'var(--surface)' }}>
-          {(['sync', 'users'] as const).map((tab) => (
+          {(['sync', 'forms', 'users'] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize"
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors relative"
               style={{
                 background: activeTab === tab ? 'var(--accent)' : 'transparent',
                 color: activeTab === tab ? 'white' : 'var(--text-muted)',
               }}>
-              {tab === 'sync' ? <span className="flex items-center gap-1.5"><RefreshCw size={13} /> GHL Sync</span> : <span className="flex items-center gap-1.5"><Users size={13} /> Users</span>}
+              {tab === 'sync' && <span className="flex items-center gap-1.5"><RefreshCw size={13} /> GHL Sync</span>}
+              {tab === 'forms' && (
+                <span className="flex items-center gap-1.5">
+                  <FileInput size={13} /> Form Submissions
+                  {pendingClients.length > 0 && (
+                    <span className="ml-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-bold"
+                      style={{ background: activeTab === 'forms' ? 'white' : 'var(--accent)', color: activeTab === 'forms' ? 'var(--accent)' : 'white' }}>
+                      {pendingClients.length}
+                    </span>
+                  )}
+                </span>
+              )}
+              {tab === 'users' && <span className="flex items-center gap-1.5"><Users size={13} /> Users</span>}
             </button>
           ))}
         </div>
@@ -307,6 +328,129 @@ export default function AdminPage() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── FORM SUBMISSIONS TAB ────────────────────────────────────── */}
+        {activeTab === 'forms' && (
+          <div className="space-y-6">
+
+            {/* Webhook setup card */}
+            <div className="card p-6">
+              <h2 className="font-semibold mb-1 flex items-center gap-2">
+                <FileInput size={16} style={{ color: 'var(--accent)' }} /> Google Forms Webhook Setup
+              </h2>
+              <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                Paste this Google Apps Script into your form's script editor. Every new submission will instantly create a pending client record here.
+              </p>
+
+              {/* Webhook URL */}
+              <div className="mb-4">
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Your Webhook URL</label>
+                <div className="flex gap-2 items-center">
+                  <code className="flex-1 text-xs px-3 py-2 rounded-lg font-mono" style={{ background: 'var(--surface-2)', color: 'var(--accent)', border: '1px solid var(--border)' }}>
+                    {typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/google-form
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/google-form`);
+                      setCopied(true); setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="btn-ghost text-sm flex items-center gap-1.5">
+                    <Copy size={13} /> {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Apps Script */}
+              <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Google Apps Script — paste in your form's script editor</label>
+              <pre className="text-xs p-4 rounded-lg overflow-x-auto leading-relaxed" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}>{`const WEBHOOK_URL = "${typeof window !== 'undefined' ? window.location.origin : 'https://YOUR-DOMAIN'}/api/webhooks/google-form";
+const WEBHOOK_SECRET = ""; // Set this to your WEBHOOK_SECRET env var value
+
+function onFormSubmit(e) {
+  const r = e.response.getItemResponses();
+  const get = (label) => {
+    const item = r.find(i => i.getItem().getTitle().toLowerCase().includes(label.toLowerCase()));
+    return item ? item.getResponse() : "";
+  };
+
+  const payload = {
+    business_name:     get("business name"),
+    contact_name:      get("contact name") || get("your name") || get("owner name"),
+    contact_email:     get("email"),
+    contact_phone:     get("phone"),
+    address:           get("address"),
+    ein:               get("ein") || get("tax id"),
+    target_locations:  get("target location") || get("service area") || get("cities"),
+  };
+
+  UrlFetchApp.fetch(WEBHOOK_URL, {
+    method: "post",
+    contentType: "application/json",
+    headers: { "x-webhook-secret": WEBHOOK_SECRET },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  });
+}`}</pre>
+              <div className="mt-3 text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
+                <p>1. In Google Forms → ⋮ menu → Script editor → paste the code above</p>
+                <p>2. Set <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>WEBHOOK_SECRET</code> to match the <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>WEBHOOK_SECRET</code> env var in Railway</p>
+                <p>3. Click Triggers → Add Trigger → <strong>onFormSubmit</strong> → On form submit → Save</p>
+                <p>4. Update the <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>get()</code> labels to match your exact form question titles</p>
+              </div>
+            </div>
+
+            {/* Pending submissions */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold">Pending Submissions ({pendingClients.length})</h2>
+              </div>
+              {pendingClients.length === 0 ? (
+                <div className="card p-10 text-center">
+                  <FileInput size={28} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No form submissions yet. Once a client fills out the form, they'll appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingClients.map((p) => (
+                    <div key={p.id} className="card p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs shrink-0"
+                              style={{ background: 'var(--accent)' }}>
+                              {p.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-semibold truncate">{p.name}</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full shrink-0"
+                              style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--yellow)' }}>
+                              pending setup
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1 text-sm pl-9">
+                            {p.contact_name && <span style={{ color: 'var(--text-muted)' }}>👤 {p.contact_name}</span>}
+                            {p.contact_email && <span style={{ color: 'var(--text-muted)' }}>✉ {p.contact_email}</span>}
+                            {p.contact_phone && <span style={{ color: 'var(--text-muted)' }}>📞 {p.contact_phone}</span>}
+                            {p.address && <span style={{ color: 'var(--text-muted)' }}>📍 {p.address}</span>}
+                            {p.ein && <span style={{ color: 'var(--text-muted)' }}>🏢 EIN: {p.ein}</span>}
+                            {p.target_locations && <span style={{ color: 'var(--text-muted)' }}>🎯 {p.target_locations}</span>}
+                          </div>
+                          <p className="text-xs pl-9" style={{ color: 'var(--text-muted)' }}>
+                            Submitted {new Date(p.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                        <Link
+                          href={`/admin/onboard?prefill=${p.id}`}
+                          className="btn-primary text-sm flex items-center gap-2 shrink-0"
+                        >
+                          <ExternalLink size={13} /> Complete Setup
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
