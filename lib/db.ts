@@ -1,0 +1,150 @@
+import Database from 'better-sqlite3';
+import path from 'path';
+import bcrypt from 'bcryptjs';
+
+const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'dashboard.db');
+
+let db: Database.Database;
+
+export function getDb(): Database.Database {
+  if (!db) {
+    const fs = require('fs');
+    const dir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    initSchema(db);
+  }
+  return db;
+}
+
+function initSchema(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin','client')),
+      client_id INTEGER,
+      name TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS clients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      logo_url TEXT,
+      ghl_api_key TEXT,
+      ghl_location_id TEXT,
+      ghl_pipeline_id TEXT,
+      stage_leads TEXT,
+      stage_unqualified TEXT,
+      stage_phone TEXT,
+      stage_inhome TEXT,
+      retainer_price REAL DEFAULT 0,
+      ad_spend REAL DEFAULT 0,
+      contract_url TEXT,
+      slack_url TEXT,
+      start_date TEXT NOT NULL DEFAULT (date('now')),
+      ghl_custom_fields TEXT,
+      daily_ad_spend REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS quotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      customer_name TEXT NOT NULL,
+      value REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed','lost')),
+      drive_url TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at TEXT DEFAULT (datetime('now')),
+      finished_at TEXT,
+      status TEXT DEFAULT 'running' CHECK(status IN ('running','success','error')),
+      locations_found INTEGER DEFAULT 0,
+      clients_created INTEGER DEFAULT 0,
+      clients_updated INTEGER DEFAULT 0,
+      error_message TEXT
+    );
+  `);
+
+  // Migrations for existing databases
+  const cols = db.prepare("PRAGMA table_info(clients)").all() as any[];
+  const colNames = cols.map((c) => c.name);
+  if (!colNames.includes('ghl_custom_fields')) {
+    db.exec('ALTER TABLE clients ADD COLUMN ghl_custom_fields TEXT');
+  }
+  if (!colNames.includes('share_token')) {
+    db.exec('ALTER TABLE clients ADD COLUMN share_token TEXT');
+  }
+  if (!colNames.includes('daily_ad_spend')) {
+    db.exec('ALTER TABLE clients ADD COLUMN daily_ad_spend REAL DEFAULT 0');
+  }
+  if (!colNames.includes('meta_access_token')) {
+    db.exec('ALTER TABLE clients ADD COLUMN meta_access_token TEXT');
+  }
+  if (!colNames.includes('meta_ad_account_id')) {
+    db.exec('ALTER TABLE clients ADD COLUMN meta_ad_account_id TEXT');
+  }
+  if (!colNames.includes('next_checkin')) {
+    db.exec('ALTER TABLE clients ADD COLUMN next_checkin TEXT');
+  }
+  if (!colNames.includes('stage_contacted')) {
+    db.exec('ALTER TABLE clients ADD COLUMN stage_contacted TEXT');
+  }
+  if (!colNames.includes('date_launched')) {
+    db.exec('ALTER TABLE clients ADD COLUMN date_launched TEXT');
+  }
+  if (!colNames.includes('date_billed')) {
+    db.exec('ALTER TABLE clients ADD COLUMN date_billed TEXT');
+  }
+  if (!colNames.includes('rebilling_date')) {
+    db.exec('ALTER TABLE clients ADD COLUMN rebilling_date TEXT');
+  }
+  if (!colNames.includes('stripe_customer_id')) {
+    db.exec('ALTER TABLE clients ADD COLUMN stripe_customer_id TEXT');
+  }
+  if (!colNames.includes('stripe_subscription_id')) {
+    db.exec('ALTER TABLE clients ADD COLUMN stripe_subscription_id TEXT');
+  }
+
+  // invoices table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      stripe_invoice_id TEXT,
+      amount REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','paid','void','uncollectible')),
+      description TEXT,
+      invoice_url TEXT,
+      period_start TEXT,
+      period_end TEXT,
+      paid_at TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Seed default admin if none exists
+  const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
+  if (!adminExists) {
+    const hash = bcrypt.hashSync('admin123', 10);
+    db.prepare(
+      'INSERT INTO users (email, password_hash, role, name) VALUES (?, ?, ?, ?)'
+    ).run('admin@agency.com', hash, 'admin', 'Agency Admin');
+  }
+}
