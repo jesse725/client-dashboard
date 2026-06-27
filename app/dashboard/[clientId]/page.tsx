@@ -333,13 +333,20 @@ export default function ClientDashboardPage() {
           </div>
 
           {/* Sales summary stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
             <StatCard
               label="Live Ad Spend"
               value={`$${Math.round(adSpend).toLocaleString()}`}
               sub={metaStats ? 'live from Meta' : client.daily_ad_spend > 0 ? 'estimated' : 'manual'}
               color="var(--accent)"
               icon={<DollarSign size={14} />}
+            />
+            <StatCard
+              label="Cost Per Lead"
+              value={cpl > 0 ? `$${Math.round(cpl).toLocaleString()}` : '—'}
+              sub={pipeline.leads > 0 ? `across ${pipeline.leads} leads` : 'no leads yet'}
+              color={cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 50 && cpl <= 150 ? 'var(--yellow)' : cpl > 150 ? 'var(--red)' : undefined}
+              icon={<Target size={14} />}
             />
             <StatCard
               label="Jobs Quoted"

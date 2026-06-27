@@ -59,6 +59,7 @@ function tenure(days: number) {
 function ClientCard({ c, onUpdate }: { c: ClientRow; onUpdate: (id: number, patch: Partial<ClientRow>) => void }) {
   const closeRate = c.total_quotes > 0 ? (c.closed_deals / c.total_quotes) * 100 : 0;
   const totalAdSpend = c.ad_spend || (c.daily_ad_spend * c.days_as_client);
+  const cpl = c.cached_leads > 0 ? totalAdSpend / c.cached_leads : 0;
   const isCheckinOverdue = c.next_checkin && new Date(c.next_checkin) < new Date();
   const daysUntilBilling = c.rebilling_date
     ? Math.ceil((new Date(c.rebilling_date).getTime() - Date.now()) / 86400000)
@@ -126,6 +127,15 @@ function ClientCard({ c, onUpdate }: { c: ClientRow; onUpdate: (id: number, patc
         <div className="rounded-lg p-2.5 space-y-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Revenue Won</p>
           <p className="font-bold" style={{ color: 'var(--green)' }}>{fmt$(c.revenue_closed)}</p>
+        </div>
+        <div className="col-span-2 rounded-lg p-2.5 flex items-center justify-between" style={{
+          background: cpl > 0 && cpl <= 50 ? 'rgba(34,197,94,0.08)' : cpl > 150 ? 'rgba(239,68,68,0.08)' : 'var(--surface-2)',
+          border: `1px solid ${cpl > 0 && cpl <= 50 ? '#22c55e44' : cpl > 150 ? '#ef444444' : 'var(--border)'}`,
+        }}>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cost Per Lead</p>
+          <p className="font-bold text-sm" style={{ color: cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 150 ? 'var(--red)' : cpl > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
+            {cpl > 0 ? `$${Math.round(cpl)}` : '—'}
+          </p>
         </div>
       </div>
 
