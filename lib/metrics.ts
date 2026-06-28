@@ -45,12 +45,16 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
   const cpl  = pipeline.leads > 0 ? totalAdSpend / pipeline.leads : 0;
 
   // Funnel conversion rates
-  const contactRate     = pipeline.leads   > 0 ? (pipeline.contacted / pipeline.leads)   * 100 : 0;
-  const leadToBookRate  = pipeline.leads   > 0 ? (pipeline.phone     / pipeline.leads)   * 100 : 0;
-  const bookToHomeRate  = pipeline.phone   > 0 ? (pipeline.inhome    / pipeline.phone)   * 100 : 0;
-  const homeToCloseRate = pipeline.inhome  > 0 ? (closedDeals        / pipeline.inhome)  * 100 : 0;
-  const leadToCloseRate = pipeline.leads   > 0 ? (closedDeals        / pipeline.leads)   * 100 : 0;
-  const closeRate       = homeToCloseRate; // alias
+  const totalAppointments = (pipeline.phone || 0) + (pipeline.inhome || 0);
+  const contactRate          = pipeline.leads    > 0 ? (pipeline.contacted  / pipeline.leads)    * 100 : 0;
+  const leadToApptRate       = pipeline.leads    > 0 ? (totalAppointments   / pipeline.leads)    * 100 : 0;
+  const apptToCloseRate      = totalAppointments > 0 ? (closedDeals         / totalAppointments) * 100 : 0;
+  const leadToCloseRate      = pipeline.leads    > 0 ? (closedDeals         / pipeline.leads)    * 100 : 0;
+  // keep old names for backwards compat
+  const leadToBookRate  = leadToApptRate;
+  const bookToHomeRate  = pipeline.phone > 0 ? ((pipeline.inhome || 0) / pipeline.phone) * 100 : 0;
+  const homeToCloseRate = apptToCloseRate;
+  const closeRate       = apptToCloseRate;
 
   return {
     daysTogether,
@@ -70,7 +74,10 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
     cac,
     roas,
     cpl,
+    totalAppointments,
     contactRate,
+    leadToApptRate,
+    apptToCloseRate,
     leadToBookRate,
     bookToHomeRate,
     homeToCloseRate,

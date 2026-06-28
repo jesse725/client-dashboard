@@ -77,11 +77,12 @@ function FunnelBar({ label, count, max, color, icon, rate }: {
   );
 }
 
-function RatePill({ label, value, color }: { label: string; value: string; color?: string }) {
+function RatePill({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
     <div className="card-2 px-4 py-3 text-center">
       <p className="text-xl font-bold" style={{ color: color ?? 'var(--accent)' }}>{value}</p>
-      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <p className="text-xs mt-0.5 font-medium" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      {sub && <p className="text-xs mt-0.5 opacity-60" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
     </div>
   );
 }
@@ -308,13 +309,14 @@ export default function ClientDashboardPage() {
           {/* Conversion rate pills */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <RatePill label="Contact Rate" value={`${m.contactRate.toFixed(1)}%`}
-              color={m.contactRate >= 50 ? 'var(--green)' : 'var(--yellow)'} />
-            <RatePill label="Lead → Phone" value={`${m.leadToBookRate.toFixed(1)}%`}
-              color={m.leadToBookRate >= 20 ? 'var(--green)' : 'var(--yellow)'} />
-            <RatePill label="Phone → In-Home" value={`${m.bookToHomeRate.toFixed(1)}%`}
-              color={m.bookToHomeRate >= 50 ? 'var(--green)' : 'var(--yellow)'} />
-            <RatePill label="In-Home → Close" value={`${m.homeToCloseRate.toFixed(1)}%`}
-              color={m.homeToCloseRate >= 30 ? 'var(--green)' : 'var(--yellow)'} />
+              color={m.contactRate >= 50 ? 'var(--green)' : 'var(--yellow)'}
+              sub={`${pipeline.contacted} of ${pipeline.leads} leads`} />
+            <RatePill label="Lead → Appointment" value={`${m.leadToApptRate.toFixed(1)}%`}
+              color={m.leadToApptRate >= 20 ? 'var(--green)' : 'var(--yellow)'}
+              sub={`${m.totalAppointments} appts (phone + in-home)`} />
+            <RatePill label="Appointment → Close" value={`${m.apptToCloseRate.toFixed(1)}%`}
+              color={m.apptToCloseRate >= 30 ? 'var(--green)' : 'var(--yellow)'}
+              sub={`${m.closedDeals} closed of ${m.totalAppointments} appts`} />
           </div>
         </section>
 

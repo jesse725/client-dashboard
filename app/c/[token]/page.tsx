@@ -33,8 +33,9 @@ interface ShareData {
     closeRateByValue: number; closeRateByCount: number;
     totalAdSpend: number; totalRetainer: number; totalCost: number;
     roi: number; cac: number; roas: number; cpl: number;
-    contactRate: number; leadToBookRate: number; bookToHomeRate: number;
-    homeToCloseRate: number; leadToCloseRate: number;
+    contactRate: number; leadToApptRate: number; apptToCloseRate: number;
+    leadToBookRate: number; bookToHomeRate: number;
+    homeToCloseRate: number; leadToCloseRate: number; totalAppointments: number;
   };
 }
 
@@ -284,10 +285,9 @@ export default function ClientSharePage() {
               color={C.red} icon={<XCircle size={14} />} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-            <RateTile label="Contact Rate" value={fmtPct(metrics.contactRate)} sub="leads that respond" color={rc(metrics.contactRate, 30, 60)} />
-            <RateTile label="Lead → Phone" value={fmtPct(metrics.leadToBookRate)} sub="leads that book" color={rc(metrics.leadToBookRate, 15, 30)} />
-            <RateTile label="Phone → In-Home" value={fmtPct(metrics.bookToHomeRate)} sub="calls → in-person" color={rc(metrics.bookToHomeRate, 40, 70)} />
-            <RateTile label="In-Home → Close" value={fmtPct(metrics.homeToCloseRate)} sub="quotes that close" color={rc(metrics.homeToCloseRate, 30, 60)} />
+            <RateTile label="Contact Rate" value={fmtPct(metrics.contactRate)} sub={`${pipeline.contacted} of ${pipeline.leads} leads`} color={rc(metrics.contactRate, 30, 60)} />
+            <RateTile label="Lead → Appointment" value={fmtPct(metrics.leadToApptRate)} sub={`${metrics.totalAppointments} appts (phone + in-home)`} color={rc(metrics.leadToApptRate, 15, 30)} />
+            <RateTile label="Appointment → Close" value={fmtPct(metrics.apptToCloseRate)} sub={`${metrics.closedDeals ?? 0} closed of ${metrics.totalAppointments} appts`} color={rc(metrics.apptToCloseRate, 30, 60)} />
           </div>
         </section>
 
