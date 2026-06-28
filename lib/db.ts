@@ -81,6 +81,13 @@ function initSchema(db: Database.Database) {
       goals TEXT,
       solutions_tried TEXT,
       issues_solutions TEXT DEFAULT '[]',
+      problems_addressed TEXT,
+      next_step_actions TEXT,
+      problems_resolved TEXT,
+      wins TEXT,
+      client_sentiment TEXT,
+      agency_action_items TEXT,
+      client_action_items TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -96,6 +103,12 @@ function initSchema(db: Database.Database) {
       error_message TEXT
     );
   `);
+
+  // Migrations for call_notes table
+  const callCols = (db.prepare("PRAGMA table_info(call_notes)").all() as any[]).map((c: any) => c.name);
+  for (const col of ['problems_addressed','next_step_actions','problems_resolved','wins','client_sentiment','agency_action_items','client_action_items']) {
+    if (!callCols.includes(col)) db.exec(`ALTER TABLE call_notes ADD COLUMN ${col} TEXT`);
+  }
 
   // Migrations for existing databases
   const cols = db.prepare("PRAGMA table_info(clients)").all() as any[];

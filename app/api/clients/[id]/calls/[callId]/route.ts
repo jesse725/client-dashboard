@@ -14,13 +14,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   db.prepare(`
     UPDATE call_notes SET
-      call_date        = COALESCE(?, call_date),
-      fathom_summary   = COALESCE(?, fathom_summary),
-      pain_points      = COALESCE(?, pain_points),
-      goals            = COALESCE(?, goals),
-      solutions_tried  = COALESCE(?, solutions_tried),
-      issues_solutions = COALESCE(?, issues_solutions),
-      updated_at       = datetime('now')
+      call_date            = COALESCE(?, call_date),
+      fathom_summary       = COALESCE(?, fathom_summary),
+      pain_points          = COALESCE(?, pain_points),
+      goals                = COALESCE(?, goals),
+      solutions_tried      = COALESCE(?, solutions_tried),
+      issues_solutions     = COALESCE(?, issues_solutions),
+      problems_addressed   = COALESCE(?, problems_addressed),
+      next_step_actions    = COALESCE(?, next_step_actions),
+      problems_resolved    = COALESCE(?, problems_resolved),
+      wins                 = COALESCE(?, wins),
+      client_sentiment     = COALESCE(?, client_sentiment),
+      agency_action_items  = COALESCE(?, agency_action_items),
+      client_action_items  = COALESCE(?, client_action_items),
+      updated_at           = datetime('now')
     WHERE id = ?
   `).run(
     body.call_date ?? null,
@@ -29,6 +36,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     body.goals ?? null,
     body.solutions_tried ?? null,
     body.issues_solutions ? JSON.stringify(body.issues_solutions) : null,
+    body.problems_addressed ?? null,
+    body.next_step_actions ?? null,
+    body.problems_resolved ?? null,
+    body.wins ?? null,
+    body.client_sentiment ?? null,
+    body.agency_action_items ?? null,
+    body.client_action_items ?? null,
     callId,
   );
 
