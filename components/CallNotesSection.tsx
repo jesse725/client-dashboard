@@ -210,7 +210,7 @@ function CheckInCard({ note, isAdmin, clientId, onSaved, onDeleted }: {
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 {new Date(note.call_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
-              {note.client_sentiment && (
+              {note.client_sentiment && isAdmin && (
                 <span className="text-xs">{note.client_sentiment}</span>
               )}
             </div>
@@ -232,7 +232,7 @@ function CheckInCard({ note, isAdmin, clientId, onSaved, onDeleted }: {
                 <input type="date" className="input text-sm" value={form.call_date} onChange={e => set('call_date', e.target.value)} />
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Client Sentiment</label>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Client Sentiment (internal only)</label>
                 <select className="input text-sm" value={form.client_sentiment || ''}
                   onChange={e => set('client_sentiment', e.target.value)}>
                   <option value="">— Select —</option>
@@ -241,6 +241,7 @@ function CheckInCard({ note, isAdmin, clientId, onSaved, onDeleted }: {
               </div>
             </div>
           )}
+          {/* Sentiment NOT shown to client */}
 
           {/* Problems currently being addressed */}
           <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>

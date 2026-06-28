@@ -111,8 +111,12 @@ export default function ClientDashboardPage() {
   const [showQuote, setShowQuote] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [clientQuoteForm, setClientQuoteForm] = useState({ customer_name: '', value: 0, profit_margin: '', quote_pdf_url: '' });
+  const [clientQuoteSaving, setClientQuoteSaving] = useState(false);
+  const [pdfUploading, setPdfUploading] = useState(false);
 
   const user = session?.user as any;
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -329,10 +333,12 @@ export default function ClientDashboardPage() {
               </div>
               <h2 className="font-semibold text-lg">Sales Results</h2>
             </div>
-            <button onClick={() => { setEditingQuote(null); setShowQuote(true); }}
-              className="btn-primary text-sm flex items-center gap-2">
-              <Plus size={14} /> Add Quote
-            </button>
+            {isAdmin && (
+              <button onClick={() => { setEditingQuote(null); setShowQuote(true); }}
+                className="btn-primary text-sm flex items-center gap-2">
+                <Plus size={14} /> Add Quote
+              </button>
+            )}
           </div>
 
           {/* Sales summary stats */}
@@ -438,6 +444,116 @@ export default function ClientDashboardPage() {
           )}
         </section>
 
+        {/* ─── Client: Add a Quote ─────────────────────────────────────── */}
+        {!isAdmin && (
+          <section>
+            <SectionHeader icon={<FileText size={15} />} title="Submit a Quote" />
+            <div className="card p-6">
+              <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                Log a new customer quote — enter the job value, your profit margin, and optionally upload the PDF quote.
+              </p>
+              <form
+                className="space-y-4"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setClientQuoteSaving(true);
+                  const res = await fetch(`/api/clients/${clientId}/quotes`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      customer_name: clientQuoteForm.customer_name,
+                      value: Number(clientQuoteForm.value),
+                      profit_margin: clientQuoteForm.profit_margin ? Number(clientQuoteForm.profit_margin) : null,
+                      quote_pdf_url: clientQuoteForm.quote_pdf_url || null,
+                    }),
+                  });
+                  if (res.ok) {
+                    const q = await res.json();
+                    setQuotes((prev) => [q, ...prev]);
+                    setClientQuoteForm({ customer_name: '', value: 0, profit_margin: '', quote_pdf_url: '' });
+                  }
+                  setClientQuoteSaving(false);
+                }}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Customer Name</label>
+                    <input className="input" value={clientQuoteForm.customer_name}
+                      onChange={(e) => setClientQuoteForm((f) => ({ ...f, customer_name: e.target.value }))}
+                      placeholder="John Smith" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Quote Value ($)</label>
+                    <input className="input" type="number" min="0" step="0.01"
+                      value={clientQuoteForm.value || ''}
+                      onChange={(e) => setClientQuoteForm((f) => ({ ...f, value: Number(e.target.value) }))}
+                      placeholder="0" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Profit Margin (%)</label>
+                    <input className="input" type="number" min="0" max="100" step="0.1"
+                      value={clientQuoteForm.profit_margin}
+                      onChange={(e) => setClientQuoteForm((f) => ({ ...f, profit_margin: e.target.value }))}
+                      placeholder="e.g. 35" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Quote PDF (optional)</label>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="input text-sm py-2"
+                      disabled={pdfUploading}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setPdfUploading(true);
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        const res = await fetch('/api/upload', { method: 'POST', body: fd });
+                        if (res.ok) {
+                          const { url } = await res.json();
+                          setClientQuoteForm((f) => ({ ...f, quote_pdf_url: url }));
+                        }
+                        setPdfUploading(false);
+                      }}
+                    />
+                    {pdfUploading && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Uploading…</p>}
+                    {clientQuoteForm.quote_pdf_url && (
+                      <p className="text-xs mt-1" style={{ color: 'var(--green)' }}>PDF uploaded ✓</p>
+                    )}
+                  </div>
+                </div>
+                <button type="submit" className="btn-primary" disabled={clientQuoteSaving || pdfUploading}>
+                  {clientQuoteSaving ? 'Submitting…' : 'Submit Quote'}
+                </button>
+              </form>
+            </div>
+          </section>
+        )}
+
+        {/* ─── Service Agreement (client view) ──────────────────────────── */}
+        {client.contract_url && (
+          <section>
+            <SectionHeader icon={<FileText size={15} />} title="Service Agreement" />
+            <div className="card p-6 flex items-center justify-between">
+              <div>
+                <p className="font-medium">Your Service Agreement</p>
+                <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Review the terms of your engagement with us at any time.
+                </p>
+              </div>
+              <a
+                href={client.contract_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary flex items-center gap-2 text-sm"
+              >
+                <ExternalLink size={14} /> View Agreement
+              </a>
+            </div>
+          </section>
+        )}
+
         {/* ─── SECTION 4: ROI / ROAS / CAC ─────────────────────────────── */}
         <section>
           <SectionHeader icon={<Zap size={15} />} title="Performance Summary" />
@@ -479,7 +595,7 @@ export default function ClientDashboardPage() {
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sales, onboarding, launch & check-in summaries</p>
             </div>
           </div>
-          <CallNotesSection clientId={Number(clientId)} isAdmin={true} />
+          <CallNotesSection clientId={Number(clientId)} isAdmin={isAdmin} />
         </section>
 
       </div>

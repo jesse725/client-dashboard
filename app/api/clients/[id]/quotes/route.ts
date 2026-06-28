@@ -14,9 +14,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const db = getDb();
-  const quotes = db
-    .prepare('SELECT * FROM quotes WHERE client_id = ? ORDER BY created_at DESC')
-    .all(id);
+  const quotes = db.prepare('SELECT * FROM quotes WHERE client_id = ? ORDER BY created_at DESC').all(id);
   return NextResponse.json(quotes);
 }
 
@@ -32,20 +30,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const body = await req.json();
   const db = getDb();
-
-  const result = db
-    .prepare(
-      `INSERT INTO quotes (client_id, customer_name, value, status, drive_url, notes)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      id,
-      body.customer_name,
-      body.value ?? 0,
-      body.status ?? 'open',
-      body.drive_url ?? null,
-      body.notes ?? null
-    );
+  const result = db.prepare(
+    `INSERT INTO quotes (client_id, customer_name, value, profit_margin, quote_pdf_url, status, drive_url, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    body.customer_name,
+    body.value ?? 0,
+    body.profit_margin ?? null,
+    body.quote_pdf_url ?? null,
+    body.status ?? 'open',
+    body.drive_url ?? null,
+    body.notes ?? null,
+  );
 
   const quote = db.prepare('SELECT * FROM quotes WHERE id = ?').get(result.lastInsertRowid);
   return NextResponse.json(quote, { status: 201 });

@@ -12,18 +12,31 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
-
+        if (!credentials?.email) return null;
         const db = getDb();
+
+        // Email-only client login — match contact_email on active clients
+        if (!credentials.password) {
+          const client = db.prepare(
+            "SELECT * FROM clients WHERE contact_email = ? AND onboard_status = 'active'"
+          ).get(credentials.email) as any;
+          if (!client) return null;
+          return {
+            id: `client-${client.id}`,
+            email: credentials.email,
+            name: client.name,
+            role: 'client',
+            clientId: String(client.id),
+          };
+        }
+
+        // Admin / team password login
         const user = db
           .prepare('SELECT * FROM users WHERE email = ?')
           .get(credentials.email) as any;
-
         if (!user) return null;
-
         const valid = await bcrypt.compare(credentials.password, user.password_hash);
         if (!valid) return null;
-
         return {
           id: String(user.id),
           email: user.email,

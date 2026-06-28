@@ -19,7 +19,7 @@ export async function PATCH(
   const body = await req.json();
   const db = getDb();
 
-  const allowed = ['customer_name', 'value', 'status', 'drive_url', 'notes'];
+  const allowed = ['customer_name', 'value', 'profit_margin', 'quote_pdf_url', 'status', 'drive_url', 'notes'];
   const updates = allowed.filter((f) => f in body);
   if (updates.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
 

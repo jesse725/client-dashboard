@@ -59,6 +59,8 @@ function initSchema(db: Database.Database) {
       client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
       customer_name TEXT NOT NULL,
       value REAL NOT NULL DEFAULT 0,
+      profit_margin REAL,
+      quote_pdf_url TEXT,
       status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed','lost')),
       drive_url TEXT,
       notes TEXT,
@@ -103,6 +105,11 @@ function initSchema(db: Database.Database) {
       error_message TEXT
     );
   `);
+
+  // Migrations for quotes table
+  const quoteCols = (db.prepare("PRAGMA table_info(quotes)").all() as any[]).map((c: any) => c.name);
+  if (!quoteCols.includes('profit_margin')) db.exec('ALTER TABLE quotes ADD COLUMN profit_margin REAL');
+  if (!quoteCols.includes('quote_pdf_url')) db.exec('ALTER TABLE quotes ADD COLUMN quote_pdf_url TEXT');
 
   // Migrations for call_notes table
   const callCols = (db.prepare("PRAGMA table_info(call_notes)").all() as any[]).map((c: any) => c.name);
