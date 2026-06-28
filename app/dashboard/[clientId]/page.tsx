@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import QuoteModal from '@/components/QuoteModal';
 import EditClientModal from '@/components/EditClientModal';
+import CallNotesSection from '@/components/CallNotesSection';
 
 // ─── Small reusable components ────────────────────────────────────────────────
 
@@ -463,6 +464,20 @@ export default function ClientDashboardPage() {
             <span>Ad Spend <span className="font-semibold" style={{ color: 'var(--text)' }}>${Math.round(adSpend).toLocaleString()} total</span></span>
             <span>Total Invested <span className="font-semibold" style={{ color: 'var(--text)' }}>${Math.round(totalCost).toLocaleString()}</span></span>
           </div>
+        </section>
+
+        {/* ─── SECTION 5: Call Notes ────────────────────────────────────── */}
+        <section>
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
+              <PhoneCall size={15} style={{ color: 'var(--accent)' }} />
+            </div>
+            <div>
+              <h2 className="font-semibold text-lg">Call Notes & History</h2>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sales, onboarding, launch & check-in summaries</p>
+            </div>
+          </div>
+          <CallNotesSection clientId={Number(clientId)} isAdmin={true} />
         </section>
 
       </div>

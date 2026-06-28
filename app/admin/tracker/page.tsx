@@ -6,8 +6,9 @@ import Link from 'next/link';
 import {
   ArrowLeft, DollarSign, TrendingUp, Users, Star, Phone,
   AlertTriangle, CheckCircle, Clock, XCircle, ChevronRight,
-  Plus, Minus, Home, BarChart2, Pause,
+  Plus, Minus, Home, BarChart2, Pause, PhoneCall, X,
 } from 'lucide-react';
+import CallNotesSection from '@/components/CallNotesSection';
 
 interface ClientRow {
   id: number;
@@ -202,6 +203,7 @@ export default function TrackerPage() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<number | null>(null);
+  const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
 
   useEffect(() => {
     const user = session?.user as any;
@@ -330,6 +332,7 @@ export default function TrackerPage() {
                       onDragStart={() => setDragging(c.id)}
                       onDragEnd={() => setDragging(null)}
                       className="cursor-grab active:cursor-grabbing"
+                      onClick={() => setSelectedClient(c)}
                     >
                       <ClientCard c={c} onUpdate={handleUpdate} />
                     </div>
@@ -348,6 +351,50 @@ export default function TrackerPage() {
           })}
         </div>
       </div>
+
+      {/* ── Call Notes Drawer ─────────────────────────────────────── */}
+      {selectedClient && (
+        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={e => { if (e.target === e.currentTarget) setSelectedClient(null); }}>
+          <div className="w-full max-w-2xl h-full overflow-y-auto flex flex-col"
+            style={{ background: 'var(--background)', borderLeft: '1px solid var(--border)' }}>
+            {/* Drawer header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b"
+              style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold"
+                  style={{ background: 'var(--accent)' }}>
+                  {selectedClient.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-semibold">{selectedClient.name}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {tenure(selectedClient.days_as_client)} · {selectedClient.client_status}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link href={`/dashboard/${selectedClient.id}`}
+                  className="btn-ghost text-sm flex items-center gap-1.5">
+                  Full Dashboard <ChevronRight size={13} />
+                </Link>
+                <button onClick={() => setSelectedClient(null)} className="hover:opacity-70" style={{ color: 'var(--text-muted)' }}>
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Call notes */}
+            <div className="flex-1 px-6 py-6">
+              <div className="flex items-center gap-2 mb-6">
+                <PhoneCall size={15} style={{ color: 'var(--accent)' }} />
+                <h3 className="font-semibold text-lg">Call Notes & History</h3>
+              </div>
+              <CallNotesSection clientId={selectedClient.id} isAdmin={true} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

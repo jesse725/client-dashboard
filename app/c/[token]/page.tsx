@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import CallNotesSection from '@/components/CallNotesSection';
 import {
   TrendingUp, Users, PhoneCall, Home, XCircle, DollarSign,
   CheckCircle, Clock, ExternalLink, FileText, RefreshCw,
@@ -9,7 +10,7 @@ import {
 
 interface ShareData {
   client: {
-    name: string; logo_url: string | null; retainer_price: number;
+    id: number; name: string; logo_url: string | null; retainer_price: number;
     ad_spend: number; daily_ad_spend: number; start_date: string;
     contract_url: string | null; next_checkin: string | null;
     date_launched: string | null; date_billed: string | null; rebilling_date: string | null;
@@ -371,6 +372,20 @@ export default function ClientSharePage() {
             <span>Ad Spend <span style={{ color: C.text, fontWeight: 600 }}>${fmt(adSpend)} total</span></span>
             <span>Total Invested <span style={{ color: C.text, fontWeight: 600 }}>${fmt(totalCost)}</span></span>
           </div>
+        </section>
+
+        {/* ── SECTION 5: Call Notes ─────────────────────────────────────── */}
+        <section style={{ paddingTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: `${C.accent}22`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <PhoneCall size={14} color={C.accent} />
+            </div>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: 16, color: C.text }}>Call Notes & History</p>
+              <p style={{ fontSize: 12, color: C.muted }}>Your sales, onboarding, launch & check-in summaries</p>
+            </div>
+          </div>
+          <CallNotesSection clientId={client.id} isAdmin={false} />
         </section>
 
         {/* Footer */}

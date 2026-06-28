@@ -70,6 +70,21 @@ function initSchema(db: Database.Database) {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS call_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      call_type TEXT NOT NULL CHECK(call_type IN ('sales','onboarding','launch','checkin')),
+      call_date TEXT DEFAULT (date('now')),
+      call_number INTEGER DEFAULT 1,
+      fathom_summary TEXT,
+      pain_points TEXT,
+      goals TEXT,
+      solutions_tried TEXT,
+      issues_solutions TEXT DEFAULT '[]',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS sync_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       started_at TEXT DEFAULT (datetime('now')),
