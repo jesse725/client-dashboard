@@ -310,7 +310,7 @@ export default function ClientDashboardPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <RatePill label="Contact Rate" value={`${m.contactRate.toFixed(1)}%`}
               color={m.contactRate >= 50 ? 'var(--green)' : 'var(--yellow)'}
-              sub={`${pipeline.contacted} of ${pipeline.leads} leads`} />
+              sub={`contacted + phone + in-home / leads`} />
             <RatePill label="Lead → Appointment" value={`${m.leadToApptRate.toFixed(1)}%`}
               color={m.leadToApptRate >= 20 ? 'var(--green)' : 'var(--yellow)'}
               sub={`${m.totalAppointments} appts (phone + in-home)`} />

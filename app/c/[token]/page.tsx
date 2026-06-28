@@ -285,7 +285,7 @@ export default function ClientSharePage() {
               color={C.red} icon={<XCircle size={14} />} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-            <RateTile label="Contact Rate" value={fmtPct(metrics.contactRate)} sub={`${pipeline.contacted} of ${pipeline.leads} leads`} color={rc(metrics.contactRate, 30, 60)} />
+            <RateTile label="Contact Rate" value={fmtPct(metrics.contactRate)} sub="contacted + phone + in-home / leads" color={rc(metrics.contactRate, 30, 60)} />
             <RateTile label="Lead → Appointment" value={fmtPct(metrics.leadToApptRate)} sub={`${metrics.totalAppointments} appts (phone + in-home)`} color={rc(metrics.leadToApptRate, 15, 30)} />
             <RateTile label="Appointment → Close" value={fmtPct(metrics.apptToCloseRate)} sub={`${metrics.closedDeals ?? 0} closed of ${metrics.totalAppointments} appts`} color={rc(metrics.apptToCloseRate, 30, 60)} />
           </div>

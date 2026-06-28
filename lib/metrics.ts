@@ -46,7 +46,8 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
 
   // Funnel conversion rates
   const totalAppointments = (pipeline.phone || 0) + (pipeline.inhome || 0);
-  const contactRate          = pipeline.leads    > 0 ? (pipeline.contacted  / pipeline.leads)    * 100 : 0;
+  const totalContacted    = (pipeline.contacted || 0) + (pipeline.phone || 0) + (pipeline.inhome || 0);
+  const contactRate          = pipeline.leads    > 0 ? (totalContacted       / pipeline.leads)    * 100 : 0;
   const leadToApptRate       = pipeline.leads    > 0 ? (totalAppointments   / pipeline.leads)    * 100 : 0;
   const apptToCloseRate      = totalAppointments > 0 ? (closedDeals         / totalAppointments) * 100 : 0;
   const leadToCloseRate      = pipeline.leads    > 0 ? (closedDeals         / pipeline.leads)    * 100 : 0;
@@ -75,6 +76,7 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
     roas,
     cpl,
     totalAppointments,
+    totalContacted,
     contactRate,
     leadToApptRate,
     apptToCloseRate,
