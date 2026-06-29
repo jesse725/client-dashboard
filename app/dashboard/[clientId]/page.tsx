@@ -181,11 +181,15 @@ export default function ClientDashboardPage() {
       <nav className="border-b px-6 py-4 flex items-center justify-between sticky top-0 z-10"
         style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="flex items-center gap-1.5 text-sm hover:opacity-70 transition-opacity"
-            style={{ color: 'var(--text-muted)' }}>
-            <ArrowLeft size={14} /> All Clients
-          </Link>
-          <span style={{ color: 'var(--border)' }}>|</span>
+          {isAdmin && (
+            <>
+              <Link href="/dashboard" className="flex items-center gap-1.5 text-sm hover:opacity-70 transition-opacity"
+                style={{ color: 'var(--text-muted)' }}>
+                <ArrowLeft size={14} /> All Clients
+              </Link>
+              <span style={{ color: 'var(--border)' }}>|</span>
+            </>
+          )}
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs"
               style={{ background: 'var(--accent)' }}>
@@ -195,28 +199,83 @@ export default function ClientDashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {client.contract_url && (
+          {isAdmin && client.contract_url && (
             <a href={client.contract_url} target="_blank" rel="noopener noreferrer"
               className="btn-ghost text-sm flex items-center gap-2">
               <FileText size={14} /> Contract
             </a>
           )}
-          <button onClick={syncGHL} className="btn-ghost text-sm flex items-center gap-2" disabled={syncing}>
-            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Syncing…' : 'Sync GHL'}
-          </button>
-          {user?.role === 'admin' && (
-            <button onClick={() => setShowEdit(true)} className="btn-ghost text-sm flex items-center gap-2">
-              <Settings size={14} /> Edit
-            </button>
+          {isAdmin && (
+            <>
+              <button onClick={syncGHL} className="btn-ghost text-sm flex items-center gap-2" disabled={syncing}>
+                <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+                {syncing ? 'Syncing…' : 'Sync GHL'}
+              </button>
+              <button onClick={() => setShowEdit(true)} className="btn-ghost text-sm flex items-center gap-2">
+                <Settings size={14} /> Edit
+              </button>
+            </>
           )}
         </div>
       </nav>
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-10">
 
-        {/* Date strip */}
-        {(client.date_launched || client.date_billed || client.rebilling_date || client.start_date) && (
+        {/* ─── Client: Partnership Overview Card ───────────────────────── */}
+        {!isAdmin && (
+          <section className="card p-6">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
+                <span style={{ color: 'var(--accent)' }}><Users size={15} /></span>
+              </div>
+              <h2 className="font-semibold text-lg">Your Partnership</h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+              {client.start_date && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Partner Since</p>
+                  <p className="font-semibold">{new Date(client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>{m.daysTogether} days together</p>
+                </div>
+              )}
+              {client.rebilling_date && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Next Billing</p>
+                  <p className="font-semibold" style={{ color: 'var(--yellow)' }}>
+                    {new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Monthly Retainer</p>
+                <p className="font-semibold">${client.retainer_price.toLocaleString()}/mo</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Status</p>
+                <p className="font-semibold" style={{ color: 'var(--green)' }}>Active</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {client.contract_url && (
+                <a href={client.contract_url} target="_blank" rel="noopener noreferrer"
+                  className="btn-ghost text-sm flex items-center gap-2">
+                  <FileText size={14} /> View Service Agreement
+                </a>
+              )}
+              {client.meta_ad_account_id && (
+                <a
+                  href={`https://www.facebook.com/adsmanager/manage/campaigns?act=${client.meta_ad_account_id.replace('act_', '')}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="btn-ghost text-sm flex items-center gap-2">
+                  <ExternalLink size={14} /> View Ad Account
+                </a>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Date strip (admin only) */}
+        {isAdmin && (client.date_launched || client.date_billed || client.rebilling_date || client.start_date) && (
           <div className="flex flex-wrap gap-6 text-sm">
             {client.start_date && (
               <span style={{ color: 'var(--text-muted)' }}>
@@ -527,29 +586,6 @@ export default function ClientDashboardPage() {
                   {clientQuoteSaving ? 'Submitting…' : 'Submit Quote'}
                 </button>
               </form>
-            </div>
-          </section>
-        )}
-
-        {/* ─── Service Agreement (client view) ──────────────────────────── */}
-        {client.contract_url && (
-          <section>
-            <SectionHeader icon={<FileText size={15} />} title="Service Agreement" />
-            <div className="card p-6 flex items-center justify-between">
-              <div>
-                <p className="font-medium">Your Service Agreement</p>
-                <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  Review the terms of your engagement with us at any time.
-                </p>
-              </div>
-              <a
-                href={client.contract_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-primary flex items-center gap-2 text-sm"
-              >
-                <ExternalLink size={14} /> View Agreement
-              </a>
             </div>
           </section>
         )}
