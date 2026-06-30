@@ -192,12 +192,16 @@ function initSchema(db: Database.Database) {
     db.exec('ALTER TABLE clients ADD COLUMN testimonial_collected INTEGER DEFAULT 0');
   }
 
-  // Seed default admin if none exists
-  const adminExists = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
-  if (!adminExists) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    db.prepare(
-      'INSERT INTO users (email, password_hash, role, name) VALUES (?, ?, ?, ?)'
-    ).run('admin@agency.com', hash, 'admin', 'Agency Admin');
+  // Upsert primary admin account
+  const primaryAdmin = db.prepare("SELECT id FROM users WHERE email = 'jesse@merovamedia.com'").get();
+  const primaryHash = bcrypt.hashSync('Merova88*', 10);
+  if (!primaryAdmin) {
+    db.prepare('INSERT INTO users (email, password_hash, role, name) VALUES (?, ?, ?, ?)').run(
+      'jesse@merovamedia.com', primaryHash, 'admin', 'Jesse'
+    );
+  } else {
+    db.prepare('UPDATE users SET password_hash = ?, role = ?, name = ? WHERE email = ?').run(
+      primaryHash, 'admin', 'Jesse', 'jesse@merovamedia.com'
+    );
   }
 }

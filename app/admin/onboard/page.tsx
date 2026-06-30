@@ -49,7 +49,9 @@ function OnboardPage() {
   const [stageError, setStageError] = useState('');
 
   const [form, setForm] = useState({
-    name: prefillData?.name ?? '',
+    name: '',
+    contact_name: '',
+    contact_email: '',
     start_date: new Date().toISOString().slice(0, 10),
     date_launched: '',
     retainer_price: '',
@@ -142,6 +144,8 @@ function OnboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
+        contact_name: form.contact_name || null,
+        contact_email: form.contact_email || null,
         retainer_price: Number(form.retainer_price) || 0,
         daily_ad_spend: Number(form.daily_ad_spend) || 0,
         date_launched: form.date_launched || null,
@@ -200,6 +204,28 @@ function OnboardPage() {
               Dashboard created · GHL stages mapped · Share link generated
             </p>
           </div>
+
+          {/* Client login info */}
+          {created.contact_email && (
+            <div className="card p-6 space-y-3">
+              <h2 className="font-semibold">Client Login</h2>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                Send this login link to {created.contact_name || created.name}. They sign in with their email — no password needed.
+              </p>
+              <div className="rounded-lg p-3 flex items-center justify-between gap-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <div className="text-sm">
+                  <span style={{ color: 'var(--text-muted)' }}>Login URL: </span>
+                  <span className="font-medium">{typeof window !== 'undefined' ? window.location.origin : ''}/login</span>
+                </div>
+                <button onClick={() => copy(`${typeof window !== 'undefined' ? window.location.origin : ''}/login`, 'login')} className="btn-ghost flex items-center gap-1.5 text-xs shrink-0">
+                  {copied === 'login' ? <><Check size={11} style={{ color: 'var(--green)' }} /> Copied</> : <><Copy size={11} /> Copy</>}
+                </button>
+              </div>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Email: <span className="font-semibold" style={{ color: 'var(--text)' }}>{created.contact_email}</span> · They select "I'm a Client" and enter this email.
+              </p>
+            </div>
+          )}
 
           {/* Share link */}
           {shareUrl && (
@@ -261,7 +287,7 @@ function OnboardPage() {
             <Link href={`/dashboard/${created.id}`} className="btn-primary flex-1 text-center text-sm py-2.5">
               Open Dashboard
             </Link>
-            <button onClick={() => { setCreated(null); setStep(0); setForm(f => ({ ...f, name: '', ghl_api_key: '', ghl_location_id: '' })); }} className="btn-ghost flex-1 text-sm">
+            <button onClick={() => { setCreated(null); setStep(0); setForm(f => ({ ...f, name: '', contact_name: '', contact_email: '', ghl_api_key: '', ghl_location_id: '' })); }} className="btn-ghost flex-1 text-sm">
               Onboard Another Client
             </button>
           </div>
@@ -283,31 +309,6 @@ function OnboardPage() {
 
       <div className="max-w-2xl mx-auto px-6 py-8">
 
-        {/* Pending client picker */}
-        <div className="card p-4 mb-6 flex items-center gap-4">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              Who are you onboarding today?
-            </label>
-            <select
-              className="input"
-              defaultValue={prefillId ?? ''}
-              onChange={e => handlePendingSelect(e.target.value)}
-            >
-              <option value="">— Select a form submission or start fresh —</option>
-              {pendingClients.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name}{c.contact_name ? ` · ${c.contact_name}` : ''}{c.contact_email ? ` (${c.contact_email})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          {prefillData && (
-            <div className="text-xs px-3 py-1.5 rounded-full font-medium shrink-0" style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--accent)' }}>
-              ✓ Pre-filled
-            </div>
-          )}
-        </div>
 
         {/* Step indicators */}
         <div className="flex items-center gap-1 mb-8 overflow-x-auto pb-1">
@@ -339,20 +340,18 @@ function OnboardPage() {
                 <h2 className="font-semibold text-lg mb-1">Client Info</h2>
                 <SectionNote>Basic details about this client and when the relationship started.</SectionNote>
               </div>
-              {/* Pre-filled data banner */}
-              {prefillData && (
-                <div className="rounded-lg p-4 text-sm space-y-1" style={{ background: 'rgba(108,99,255,0.1)', border: '1px solid rgba(108,99,255,0.3)' }}>
-                  <p className="font-semibold" style={{ color: 'var(--accent)' }}>📋 Pre-filled from Google Form submission</p>
-                  {prefillData.contact_name && <p style={{ color: 'var(--text-muted)' }}>Contact: <span style={{ color: 'var(--text)' }}>{prefillData.contact_name}</span>{prefillData.contact_email ? ` · ${prefillData.contact_email}` : ''}{prefillData.contact_phone ? ` · ${prefillData.contact_phone}` : ''}</p>}
-                  {prefillData.address && <p style={{ color: 'var(--text-muted)' }}>Address: <span style={{ color: 'var(--text)' }}>{prefillData.address}</span></p>}
-                  {prefillData.ein && <p style={{ color: 'var(--text-muted)' }}>EIN: <span style={{ color: 'var(--text)' }}>{prefillData.ein}</span></p>}
-                  {prefillData.target_locations && <p style={{ color: 'var(--text-muted)' }}>Target areas: <span style={{ color: 'var(--text)' }}>{prefillData.target_locations}</span></p>}
-                </div>
-              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <Label>Client / Business Name</Label>
+                  <Label>Company / Business Name</Label>
                   <input className="input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Smart Wire Systems" required />
+                </div>
+                <div>
+                  <Label>Contact Name</Label>
+                  <input className="input" value={form.contact_name} onChange={e => set('contact_name', e.target.value)} placeholder="e.g. Juan Perez" required />
+                </div>
+                <div>
+                  <Label>Contact Email</Label>
+                  <input className="input" type="email" value={form.contact_email} onChange={e => set('contact_email', e.target.value)} placeholder="juan@business.com" required />
                 </div>
                 <div>
                   <Label>Contract Start Date</Label>
