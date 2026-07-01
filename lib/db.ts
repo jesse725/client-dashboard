@@ -192,6 +192,10 @@ function initSchema(db: Database.Database) {
     db.exec('ALTER TABLE clients ADD COLUMN testimonial_collected INTEGER DEFAULT 0');
   }
 
+  // Seed agency GHL settings
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_location_id', 'NqZup9jK9NOBs8GDIyuX')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_pipeline_id', 'hDObd2e6pmi108UBHi15')").run();
+
   // Upsert primary admin account
   const primaryAdmin = db.prepare("SELECT id FROM users WHERE email = 'jesse@merovamedia.com'").get();
   const primaryHash = bcrypt.hashSync('Merova88*', 10);
