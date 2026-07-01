@@ -352,6 +352,121 @@ function MonthView({ clients, onSelect }: { clients: ClientRow[]; onSelect: (c: 
   );
 }
 
+// ── Internal View ─────────────────────────────────────────────────────────────
+function InternalView({ clients }: { clients: ClientRow[] }) {
+  const active = clients.filter(c => c.client_status !== 'Churned');
+  const churned = clients.filter(c => c.client_status === 'Churned');
+  const totalMRR = active.reduce((s, c) => s + (c.retainer_price || 0), 0);
+  const totalLTV = clients.reduce((s, c) => s + (c.total_payments_received || 0), 0);
+  const churnRate = clients.length > 0 ? (churned.length / clients.length) * 100 : 0;
+  const testimonials = clients.filter(c => c.testimonial_collected).length;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'MRR',              value: fmt$(totalMRR),                       sub: `${active.length} active clients`,    color: 'var(--green)' },
+          { label: 'Total LTV',        value: fmt$(totalLTV),                       sub: 'All-time payments received',         color: 'var(--accent)' },
+          { label: 'Churn Rate',       value: `${churnRate.toFixed(1)}%`,           sub: `${churned.length} churned`,          color: churnRate > 20 ? 'var(--red)' : churnRate > 10 ? 'var(--yellow)' : 'var(--green)' },
+          { label: 'Testimonials',     value: `${testimonials}/${clients.length}`,  sub: 'Collected',                          color: 'var(--accent)' },
+        ].map(s => (
+          <div key={s.label} className="card px-4 py-4">
+            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
+            <p className="font-bold text-2xl" style={{ color: s.color }}>{s.value}</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Per-client MRR & LTV table */}
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+          <p className="font-semibold text-sm">Client Financial Breakdown</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                {['Client', 'Status', 'MRR', 'Tenure', 'LTV', 'Revenue Closed', 'Testimonial'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map((c, i) => {
+                const ltv = c.total_payments_received || 0;
+                const isChurned = c.client_status === 'Churned';
+                return (
+                  <tr key={c.id}
+                    className="hover:bg-[var(--surface-2)] transition-colors"
+                    style={{ borderBottom: i < clients.length - 1 ? '1px solid var(--border)' : 'none', opacity: isChurned ? 0.5 : 1 }}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded flex items-center justify-center text-white font-bold text-xs shrink-0" style={{ background: isChurned ? '#64748b' : 'var(--accent)' }}>
+                          {c.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-medium">{c.name}</p>
+                          {c.contact_name && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.contact_name}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{ background: isChurned ? 'rgba(100,116,139,0.15)' : 'rgba(34,197,94,0.15)', color: isChurned ? '#64748b' : '#22c55e' }}>
+                        {isChurned ? 'Churned' : 'Active'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: isChurned ? 'var(--text-muted)' : 'var(--green)' }}>
+                      {isChurned ? '—' : fmt$(c.retainer_price || 0) + '/mo'}
+                    </td>
+                    <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{tenure(c.days_as_client)}</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(ltv)}</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--green)' }}>
+                      {c.revenue_closed > 0 ? fmt$(c.revenue_closed) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.testimonial_collected ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>✓ Collected</span>
+                      ) : (
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Not yet</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Churned detail */}
+      {churned.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+            <p className="font-semibold text-sm" style={{ color: '#ef4444' }}>Churned Clients ({churned.length})</p>
+          </div>
+          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+            {churned.map(c => (
+              <div key={c.id} className="px-4 py-3 flex items-center justify-between">
+                <div>
+                  <p className="font-medium">{c.name}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Was paying {fmt$(c.retainer_price || 0)}/mo · {tenure(c.days_as_client)} tenure</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(c.total_payments_received || 0)} LTV</p>
+                  {c.testimonial_collected && <p className="text-xs" style={{ color: '#22c55e' }}>Testimonial ✓</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TrackerPage() {
   const { data: session, status } = useSession();
@@ -360,7 +475,7 @@ export default function TrackerPage() {
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<number | null>(null);
   const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
-  const [view, setView] = useState<'overview' | 'kanban' | 'months'>('overview');
+  const [view, setView] = useState<'overview' | 'kanban' | 'months' | 'internal'>('overview');
   const [ghlOpps, setGhlOpps] = useState<any[]>([]);
   const [syncing, setSyncing] = useState(false);
 
@@ -444,9 +559,10 @@ export default function TrackerPage() {
           {/* View tabs */}
           <div className="flex rounded-lg p-0.5 gap-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             {([
-              { key: 'overview', label: 'Overview', icon: <Table2 size={13} /> },
-              { key: 'kanban',   label: 'Journey',  icon: <Kanban size={13} /> },
-              { key: 'months',   label: 'Months',   icon: <Calendar size={13} /> },
+              { key: 'overview',  label: 'Overview',  icon: <Table2 size={13} /> },
+              { key: 'kanban',    label: 'Journey',   icon: <Kanban size={13} /> },
+              { key: 'months',    label: 'Months',    icon: <Calendar size={13} /> },
+              { key: 'internal',  label: 'Internal',  icon: <DollarSign size={13} /> },
             ] as const).map(v => (
               <button key={v.key} onClick={() => setView(v.key)}
                 className="px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all"
@@ -466,6 +582,8 @@ export default function TrackerPage() {
         {view === 'overview' && <OverviewTable clients={clients} onSelect={setSelectedClient} />}
 
         {view === 'months' && <MonthView clients={clients} onSelect={setSelectedClient} />}
+
+        {view === 'internal' && <InternalView clients={clients} />}
 
         {/* ── Journey / Kanban ─────────────────────────────────────── */}
         {view === 'kanban' && (

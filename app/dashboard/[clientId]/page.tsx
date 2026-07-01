@@ -174,6 +174,20 @@ export default function ClientDashboardPage() {
 
   const totalQuoted = quotes.reduce((s, q) => s + q.value, 0);
   const openValue = quotes.filter(q => q.status === 'open').reduce((s, q) => s + q.value, 0);
+  const closedValue = quotes.filter(q => q.status === 'closed').reduce((s, q) => s + q.value, 0);
+  const openQuotes = quotes.filter(q => q.status === 'open');
+
+  async function updateQuoteStatus(quoteId: number, status: string) {
+    const res = await fetch(`/api/clients/${clientId}/quotes/${quoteId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setQuotes(prev => prev.map(q => q.id === quoteId ? updated : q));
+    }
+  }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
@@ -401,41 +415,47 @@ export default function ClientDashboardPage() {
           </div>
 
           {/* Sales summary stats */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
             <StatCard
-              label="Live Ad Spend"
-              value={`$${Math.round(adSpend).toLocaleString()}`}
-              sub={metaStats ? 'live from Meta' : client.daily_ad_spend > 0 ? 'estimated' : 'manual'}
-              color="var(--accent)"
-              icon={<DollarSign size={14} />}
-            />
-            <StatCard
-              label="Cost Per Lead"
-              value={cpl > 0 ? `$${Math.round(cpl).toLocaleString()}` : '—'}
-              sub={pipeline.leads > 0 ? `across ${pipeline.leads} leads` : 'no leads yet'}
-              color={cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 50 && cpl <= 150 ? 'var(--yellow)' : cpl > 150 ? 'var(--red)' : undefined}
-              icon={<Target size={14} />}
-            />
-            <StatCard
-              label="Jobs Quoted"
-              value={String(quotes.length)}
-              sub={`$${totalQuoted.toLocaleString()} total value`}
+              label="Potential Revenue"
+              value={`$${openValue.toLocaleString()}`}
+              sub={`${openQuotes.length} open quote${openQuotes.length !== 1 ? 's' : ''}`}
               color="var(--yellow)"
-              icon={<FileText size={14} />}
+              icon={<TrendingUp size={14} />}
             />
             <StatCard
-              label="Jobs Closed"
-              value={String(m.closedDeals)}
-              sub={`$${m.totalRevenue.toLocaleString()} revenue`}
+              label="Revenue Closed"
+              value={`$${closedValue.toLocaleString()}`}
+              sub={`${m.closedDeals} job${m.closedDeals !== 1 ? 's' : ''} won`}
               color="var(--green)"
               icon={<CheckCircle size={14} />}
+            />
+            <StatCard
+              label="Total Quoted"
+              value={`$${totalQuoted.toLocaleString()}`}
+              sub={`across ${quotes.length} quote${quotes.length !== 1 ? 's' : ''}`}
+              icon={<FileText size={14} />}
             />
             <StatCard
               label="Close Rate"
               value={`${m.closeRateByCount.toFixed(1)}%`}
               sub={`${m.closeRateByValue.toFixed(1)}% by value`}
               color={m.closeRateByCount >= 30 ? 'var(--green)' : 'var(--yellow)'}
-              icon={<TrendingUp size={14} />}
+              icon={<Target size={14} />}
+            />
+            <StatCard
+              label="Ad Spend"
+              value={`$${Math.round(adSpend).toLocaleString()}`}
+              sub={metaStats ? 'live from Meta' : 'estimated'}
+              color="var(--accent)"
+              icon={<DollarSign size={14} />}
+            />
+            <StatCard
+              label="Cost Per Lead"
+              value={cpl > 0 ? `$${Math.round(cpl).toLocaleString()}` : '—'}
+              sub={pipeline.leads > 0 ? `${pipeline.leads} leads` : 'no leads yet'}
+              color={cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 50 && cpl <= 150 ? 'var(--yellow)' : cpl > 150 ? 'var(--red)' : undefined}
+              icon={<DollarSign size={14} />}
             />
           </div>
 
@@ -452,7 +472,7 @@ export default function ClientDashboardPage() {
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Customer</th>
                     <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Value</th>
                     <th className="text-center px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Status</th>
-                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Notes</th>
+                    {isAdmin && <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Notes</th>}
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Date</th>
                     <th className="px-4 py-3" />
                   </tr>
@@ -468,14 +488,28 @@ export default function ClientDashboardPage() {
                         ${q.value.toLocaleString()}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
-                          {STATUS_ICONS[q.status]} {q.status}
-                        </span>
+                        {!isAdmin ? (
+                          <select
+                            value={q.status}
+                            onChange={e => updateQuoteStatus(q.id, e.target.value)}
+                            className="text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
+                            style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
+                            <option value="open">Open</option>
+                            <option value="closed">Closed ✓</option>
+                            <option value="lost">Lost</option>
+                          </select>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                            style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
+                            {STATUS_ICONS[q.status]} {q.status}
+                          </span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 max-w-[180px] truncate" style={{ color: 'var(--text-muted)' }}>
-                        {q.notes || '—'}
-                      </td>
+                      {isAdmin && (
+                        <td className="px-4 py-3 max-w-[180px] truncate" style={{ color: 'var(--text-muted)' }}>
+                          {q.notes || '—'}
+                        </td>
+                      )}
                       <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>
                         {new Date(q.created_at).toLocaleDateString()}
                       </td>
@@ -488,11 +522,13 @@ export default function ClientDashboardPage() {
                               <ExternalLink size={13} />
                             </a>
                           )}
-                          <button onClick={() => { setEditingQuote(q); setShowQuote(true); }}
-                            className="text-xs hover:opacity-70 transition-opacity"
-                            style={{ color: 'var(--text-muted)' }}>
-                            Edit
-                          </button>
+                          {isAdmin && (
+                            <button onClick={() => { setEditingQuote(q); setShowQuote(true); }}
+                              className="text-xs hover:opacity-70 transition-opacity"
+                              style={{ color: 'var(--text-muted)' }}>
+                              Edit
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
