@@ -22,7 +22,10 @@ export async function GET() {
       CAST((julianday('now') - julianday(c.start_date)) AS INTEGER)              AS days_as_client,
       ROUND(
         (julianday('now') - julianday(c.start_date)) / 30.0
-      ) * COALESCE(c.retainer_price, 0)                                          AS total_payments_received
+      ) * COALESCE(c.retainer_price, 0)                                          AS total_payments_received,
+      (SELECT cn.client_sentiment FROM call_notes cn
+       WHERE cn.client_id = c.id AND cn.call_type = 'checkin' AND cn.client_sentiment IS NOT NULL
+       ORDER BY cn.id DESC LIMIT 1)                                              AS latest_sentiment
     FROM clients c
     LEFT JOIN quotes q ON q.client_id = c.id
     WHERE c.onboard_status != 'pending'
