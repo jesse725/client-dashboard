@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  DollarSign, TrendingUp, Users, Star, Phone, AlertTriangle,
+  DollarSign, TrendingUp, Users, Star, Phone, AlertTriangle, Target,
   CheckCircle, Clock, XCircle, ChevronRight, Plus, Minus,
   Home, BarChart2, Pause, PhoneCall, X, RefreshCw,
   Smile, Meh, Frown, Table2, Kanban, Calendar,
@@ -553,6 +553,9 @@ export default function TrackerPage() {
           <span className="font-semibold flex items-center gap-2">
             <BarChart2 size={15} style={{ color: 'var(--accent)' }} /> Client Tracker
           </span>
+          <Link href="/admin/sales" className="text-sm hover:opacity-70 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+            <TrendingUp size={13} /> Sales
+          </Link>
           <span className="text-sm font-semibold" style={{ color: 'var(--green)' }}>{fmt$(totalMRR)}/mo MRR</span>
         </div>
         <div className="flex items-center gap-2">

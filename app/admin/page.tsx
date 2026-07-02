@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Plus, X, RefreshCw, CheckCircle, AlertCircle,
-  Clock, Settings2, Key, Users, ChevronDown, FileInput, Copy, ExternalLink, BarChart2,
+  Clock, Settings2, Key, Users, ChevronDown, FileInput, Copy, ExternalLink, BarChart2, TrendingUp,
 } from 'lucide-react';
 import StageMappingModal from '@/components/StageMappingModal';
 
@@ -140,6 +140,9 @@ export default function AdminPage() {
         <div className="flex items-center gap-2">
           <Link href="/admin/tracker" className="btn-ghost text-sm flex items-center gap-2">
             <BarChart2 size={14} /> Client Tracker
+          </Link>
+          <Link href="/admin/sales" className="btn-ghost text-sm flex items-center gap-2">
+            <TrendingUp size={14} /> Sales Tracker
           </Link>
           <Link href="/admin/onboard" className="btn-primary text-sm flex items-center gap-2">
             <Plus size={14} /> Onboard Client
