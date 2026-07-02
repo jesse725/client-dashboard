@@ -111,9 +111,7 @@ export default function ClientDashboardPage() {
   const [showQuote, setShowQuote] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
   const [showEdit, setShowEdit] = useState(false);
-  const [clientQuoteForm, setClientQuoteForm] = useState({ customer_name: '', value: 0, profit_margin: '', quote_pdf_url: '' });
-  const [clientQuoteSaving, setClientQuoteSaving] = useState(false);
-  const [pdfUploading, setPdfUploading] = useState(false);
+  const [closingQuote, setClosingQuote] = useState<{ id: number; closedBy: string } | null>(null);
 
   const user = session?.user as any;
   const isAdmin = user?.role === 'admin';
@@ -177,16 +175,19 @@ export default function ClientDashboardPage() {
   const closedValue = quotes.filter(q => q.status === 'closed').reduce((s, q) => s + q.value, 0);
   const openQuotes = quotes.filter(q => q.status === 'open');
 
-async function updateQuoteStatus(quoteId: number, status: string) {
+  async function updateQuoteStatus(quoteId: number, status: string, notes?: string) {
+    const body: any = { status };
+    if (notes !== undefined) body.notes = notes;
     const res = await fetch(`/api/clients/${clientId}/quotes/${quoteId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(body),
     });
     if (res.ok) {
       const updated = await res.json();
       setQuotes(prev => prev.map(q => q.id === quoteId ? updated : q));
     }
+    setClosingQuote(null);
   }
 
   return (
@@ -299,59 +300,61 @@ async function updateQuoteStatus(quoteId: number, status: string) {
         </section>
 
         {/* ─── SECTION 1: Ad Performance ────────────────────────────────── */}
-        <section>
-          <SectionHeader icon={<BarChart2 size={15} />} title="Ad Performance"
-            badge={metaStats ? 'Live from Meta' : client.daily_ad_spend > 0 ? 'Estimated' : 'Manual'} />
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <StatCard
-              label="Ad Spend"
-              value={`$${Math.round(adSpend).toLocaleString()}`}
-              sub={metaStats ? 'all-time from Meta' : client.daily_ad_spend > 0 ? `$${client.daily_ad_spend}/day` : 'manual'}
-              color="var(--accent)"
-              icon={<DollarSign size={14} />}
-            />
-            <StatCard
-              label="CPL"
-              value={cpl > 0 ? `$${Math.round(cpl).toLocaleString()}` : '—'}
-              sub="cost per lead"
-              icon={<Target size={14} />}
-            />
-            {metaStats ? (
-              <>
-                <StatCard
-                  label="Impressions"
-                  value={metaStats.impressions >= 1000 ? `${(metaStats.impressions / 1000).toFixed(1)}k` : String(metaStats.impressions)}
-                  sub="total ad views"
-                  icon={<Eye size={14} />}
-                />
-                <StatCard
-                  label="Clicks"
-                  value={metaStats.clicks.toLocaleString()}
-                  sub="link clicks"
-                  icon={<MousePointerClick size={14} />}
-                />
-                <StatCard
-                  label="CTR"
-                  value={`${metaStats.ctr.toFixed(2)}%`}
-                  sub="click-through rate"
-                  color={metaStats.ctr >= 1 ? 'var(--green)' : metaStats.ctr >= 0.5 ? 'var(--yellow)' : 'var(--red)'}
-                  icon={<Activity size={14} />}
-                />
-                <StatCard
-                  label="CPC"
-                  value={`$${metaStats.cpc.toFixed(2)}`}
-                  sub="cost per click"
-                  icon={<Zap size={14} />}
-                />
-              </>
-            ) : (
-              <div className="col-span-4 card p-4 flex items-center justify-center text-sm"
-                style={{ color: 'var(--text-muted)', borderStyle: 'dashed' }}>
-                Connect Meta Ads in Edit → to see live impressions, clicks, CTR & CPC
-              </div>
-            )}
-          </div>
-        </section>
+        {(isAdmin || adSpend > 0 || metaStats) && (
+          <section>
+            <SectionHeader icon={<BarChart2 size={15} />} title="Ad Performance"
+              badge={metaStats ? 'Live from Meta' : client.daily_ad_spend > 0 ? 'Estimated' : 'Manual'} />
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <StatCard
+                label="Ad Spend"
+                value={`$${Math.round(adSpend).toLocaleString()}`}
+                sub={metaStats ? 'all-time from Meta' : client.daily_ad_spend > 0 ? `$${client.daily_ad_spend}/day` : 'manual'}
+                color="var(--accent)"
+                icon={<DollarSign size={14} />}
+              />
+              <StatCard
+                label="CPL"
+                value={cpl > 0 ? `$${Math.round(cpl).toLocaleString()}` : '—'}
+                sub="cost per lead"
+                icon={<Target size={14} />}
+              />
+              {metaStats ? (
+                <>
+                  <StatCard
+                    label="Impressions"
+                    value={metaStats.impressions >= 1000 ? `${(metaStats.impressions / 1000).toFixed(1)}k` : String(metaStats.impressions)}
+                    sub="total ad views"
+                    icon={<Eye size={14} />}
+                  />
+                  <StatCard
+                    label="Clicks"
+                    value={metaStats.clicks.toLocaleString()}
+                    sub="link clicks"
+                    icon={<MousePointerClick size={14} />}
+                  />
+                  <StatCard
+                    label="CTR"
+                    value={`${metaStats.ctr.toFixed(2)}%`}
+                    sub="click-through rate"
+                    color={metaStats.ctr >= 1 ? 'var(--green)' : metaStats.ctr >= 0.5 ? 'var(--yellow)' : 'var(--red)'}
+                    icon={<Activity size={14} />}
+                  />
+                  <StatCard
+                    label="CPC"
+                    value={`$${metaStats.cpc.toFixed(2)}`}
+                    sub="cost per click"
+                    icon={<Zap size={14} />}
+                  />
+                </>
+              ) : isAdmin && (
+                <div className="col-span-4 card p-4 flex items-center justify-center text-sm"
+                  style={{ color: 'var(--text-muted)', borderStyle: 'dashed' }}>
+                  Connect Meta Ads in Edit → to see live impressions, clicks, CTR & CPC
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* ─── SECTION 2: Follow-up Pipeline ───────────────────────────── */}
         <section>
@@ -458,8 +461,8 @@ async function updateQuoteStatus(quoteId: number, status: string) {
                   <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Customer</th>
                     <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Value</th>
-                    <th className="text-center px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Status</th>
-                    {isAdmin && <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Notes</th>}
+                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Status</th>
+                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Notes</th>
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Date</th>
                     <th className="px-4 py-3" />
                   </tr>
@@ -474,17 +477,49 @@ async function updateQuoteStatus(quoteId: number, status: string) {
                         style={{ color: q.status === 'closed' ? 'var(--green)' : 'var(--text)' }}>
                         ${q.value.toLocaleString()}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3">
                         {!isAdmin ? (
-                          <select
-                            value={q.status}
-                            onChange={e => updateQuoteStatus(q.id, e.target.value)}
-                            className="text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
-                            style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
-                            <option value="open">Open</option>
-                            <option value="closed">Closed ✓</option>
-                            <option value="lost">Lost</option>
-                          </select>
+                          closingQuote?.id === q.id ? (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <input
+                                autoFocus
+                                placeholder="Closed by (optional)"
+                                className="input text-xs py-1 px-2 w-36"
+                                value={closingQuote.closedBy}
+                                onChange={e => setClosingQuote({ id: q.id, closedBy: e.target.value })}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') updateQuoteStatus(q.id, 'closed', closingQuote.closedBy || undefined);
+                                  if (e.key === 'Escape') setClosingQuote(null);
+                                }}
+                              />
+                              <button onClick={() => updateQuoteStatus(q.id, 'closed', closingQuote.closedBy || undefined)}
+                                className="text-xs px-2 py-1 rounded" style={{ background: '#22c55e', color: '#fff' }}>
+                                Save
+                              </button>
+                              <button onClick={() => setClosingQuote(null)} className="text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                                style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
+                                {STATUS_ICONS[q.status]} {q.status}
+                              </span>
+                              {q.status === 'open' && (
+                                <>
+                                  <button onClick={() => setClosingQuote({ id: q.id, closedBy: '' })}
+                                    className="text-xs px-2 py-0.5 rounded border"
+                                    style={{ color: '#22c55e', borderColor: '#22c55e33', background: '#22c55e11' }}>
+                                    Mark Closed
+                                  </button>
+                                  <button onClick={() => updateQuoteStatus(q.id, 'lost')}
+                                    className="text-xs px-2 py-0.5 rounded border"
+                                    style={{ color: '#ef4444', borderColor: '#ef444433', background: '#ef444411' }}>
+                                    Lost
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                             style={{ background: `${STATUS_COLORS[q.status]}22`, color: STATUS_COLORS[q.status] }}>
@@ -492,11 +527,9 @@ async function updateQuoteStatus(quoteId: number, status: string) {
                           </span>
                         )}
                       </td>
-                      {isAdmin && (
-                        <td className="px-4 py-3 max-w-[180px] truncate" style={{ color: 'var(--text-muted)' }}>
-                          {q.notes || '—'}
-                        </td>
-                      )}
+                      <td className="px-4 py-3 max-w-[200px] truncate text-sm" style={{ color: 'var(--text-muted)' }}>
+                        {q.notes || '—'}
+                      </td>
                       <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>
                         {new Date(q.created_at).toLocaleDateString()}
                       </td>
