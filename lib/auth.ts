@@ -15,19 +15,35 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email) return null;
         const db = getDb();
 
-        // Email-only client login — match contact_email on active clients
+        // Email-only client login — match contact_email on active clients, or users table
         if (!credentials.password) {
           const client = db.prepare(
             "SELECT * FROM clients WHERE contact_email = ? AND onboard_status = 'active'"
           ).get(credentials.email) as any;
-          if (!client) return null;
-          return {
-            id: `client-${client.id}`,
-            email: credentials.email,
-            name: client.name,
-            role: 'client',
-            clientId: String(client.id),
-          };
+          if (client) {
+            return {
+              id: `client-${client.id}`,
+              email: credentials.email,
+              name: client.name,
+              role: 'client',
+              clientId: String(client.id),
+            };
+          }
+          // Also allow users-table client logins (email-only, no password needed)
+          const userRow = db.prepare("SELECT * FROM users WHERE email = ? AND role = 'client'").get(credentials.email) as any;
+          if (userRow?.client_id) {
+            const clientRecord = db.prepare('SELECT * FROM clients WHERE id = ?').get(userRow.client_id) as any;
+            if (clientRecord) {
+              return {
+                id: String(userRow.id),
+                email: userRow.email,
+                name: clientRecord.name,
+                role: 'client',
+                clientId: String(userRow.client_id),
+              };
+            }
+          }
+          return null;
         }
 
         // Admin / team password login
