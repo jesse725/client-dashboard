@@ -270,41 +270,14 @@ export default function ClientDashboardPage() {
               </div>
             )}
 
-            {/* Next Billing — editable by client */}
             <div>
               <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Next Billing</p>
-              {editingBilling ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    className="input text-sm py-1 px-2"
-                    defaultValue={billingInput}
-                    onChange={e => setBillingInput(e.target.value)}
-                    autoFocus
-                  />
-                  <button onClick={() => updateRebillingDate(billingInput)}
-                    className="text-xs px-2 py-1 rounded" style={{ background: 'var(--accent)', color: '#fff' }}>
-                    Save
-                  </button>
-                  <button onClick={() => setEditingBilling(false)} className="text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
-                </div>
+              {client.rebilling_date ? (
+                <p className="font-semibold" style={{ color: 'var(--yellow)' }}>
+                  {new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
               ) : (
-                <div className="flex items-center gap-2">
-                  {client.rebilling_date ? (
-                    <p className="font-semibold" style={{ color: 'var(--yellow)' }}>
-                      {new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </p>
-                  ) : (
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Not set</p>
-                  )}
-                  {!isAdmin && (
-                    <button onClick={() => { setBillingInput(client.rebilling_date ?? ''); setEditingBilling(true); }}
-                      className="text-xs px-2 py-0.5 rounded border hover:opacity-70 transition-opacity"
-                      style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
-                      {client.rebilling_date ? 'Edit' : '+ Set'}
-                    </button>
-                  )}
-                </div>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Not set</p>
               )}
             </div>
 
