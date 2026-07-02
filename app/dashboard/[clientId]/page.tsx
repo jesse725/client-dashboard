@@ -114,8 +114,6 @@ export default function ClientDashboardPage() {
   const [clientQuoteForm, setClientQuoteForm] = useState({ customer_name: '', value: 0, profit_margin: '', quote_pdf_url: '' });
   const [clientQuoteSaving, setClientQuoteSaving] = useState(false);
   const [pdfUploading, setPdfUploading] = useState(false);
-  const [editingBilling, setEditingBilling] = useState(false);
-  const [billingInput, setBillingInput] = useState('');
 
   const user = session?.user as any;
   const isAdmin = user?.role === 'admin';
@@ -179,20 +177,7 @@ export default function ClientDashboardPage() {
   const closedValue = quotes.filter(q => q.status === 'closed').reduce((s, q) => s + q.value, 0);
   const openQuotes = quotes.filter(q => q.status === 'open');
 
-  async function updateRebillingDate(date: string) {
-    const res = await fetch(`/api/clients/${clientId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rebilling_date: date }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setClient(updated);
-    }
-    setEditingBilling(false);
-  }
-
-  async function updateQuoteStatus(quoteId: number, status: string) {
+async function updateQuoteStatus(quoteId: number, status: string) {
     const res = await fetch(`/api/clients/${clientId}/quotes/${quoteId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
