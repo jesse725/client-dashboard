@@ -10,19 +10,41 @@ export async function GET(req: Request) {
 
   const db = getDb();
 
-  // Find Juan's client by contact_email or name
-  const client = db.prepare(
-    `SELECT id, name FROM clients WHERE LOWER(contact_email) = 'juancarlo502@yahoo.com'
-       OR LOWER(name) LIKE '%juan%'
-     ORDER BY id LIMIT 1`
-  ).get() as any;
+  // If client_id is specified, use it directly
+  const clientIdParam = searchParams.get('client_id');
+
+  // List mode — show all clients so we can find the right ID
+  if (searchParams.get('list') === '1') {
+    const clients = db.prepare(
+      'SELECT id, name, contact_name, contact_email, retainer_price FROM clients ORDER BY id'
+    ).all();
+    const users = db.prepare('SELECT id, email, role, client_id FROM users ORDER BY id').all();
+    return NextResponse.json({ clients, users });
+  }
+
+  let client: any = null;
+
+  if (clientIdParam) {
+    client = db.prepare('SELECT id, name FROM clients WHERE id = ?').get(clientIdParam);
+  } else {
+    client = db.prepare(
+      `SELECT id, name FROM clients WHERE LOWER(contact_email) = 'juancarlo502@yahoo.com'
+         OR LOWER(name) LIKE '%juan%'
+         OR retainer_price = 1750
+       ORDER BY id LIMIT 1`
+    ).get();
+  }
 
   if (!client) {
-    return NextResponse.json({ error: 'No client found matching Juan. Please onboard him first.' }, { status: 404 });
+    const all = db.prepare('SELECT id, name, contact_email, retainer_price FROM clients ORDER BY id').all();
+    return NextResponse.json({
+      error: 'No client found. Add ?list=1 to see all clients, then ?client_id=X to link Juan to the correct one.',
+      clients: all,
+    }, { status: 404 });
   }
 
   const email = 'juancarlo502@yahoo.com';
-  const hash = bcrypt.hashSync(email, 10); // passwordless — auth checks email only
+  const hash = bcrypt.hashSync(email, 10);
 
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as any;
   if (existing) {
@@ -36,5 +58,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     message: `Login created for juancarlo502@yahoo.com → linked to client "${client.name}" (id ${client.id})`,
+    loginUrl: 'https://web-production-c1d62.up.railway.app/login',
+    email,
   });
 }
