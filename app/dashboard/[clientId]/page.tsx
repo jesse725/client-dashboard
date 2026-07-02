@@ -114,6 +114,8 @@ export default function ClientDashboardPage() {
   const [clientQuoteForm, setClientQuoteForm] = useState({ customer_name: '', value: 0, profit_margin: '', quote_pdf_url: '' });
   const [clientQuoteSaving, setClientQuoteSaving] = useState(false);
   const [pdfUploading, setPdfUploading] = useState(false);
+  const [editingBilling, setEditingBilling] = useState(false);
+  const [billingInput, setBillingInput] = useState('');
 
   const user = session?.user as any;
   const isAdmin = user?.role === 'admin';
@@ -177,6 +179,19 @@ export default function ClientDashboardPage() {
   const closedValue = quotes.filter(q => q.status === 'closed').reduce((s, q) => s + q.value, 0);
   const openQuotes = quotes.filter(q => q.status === 'open');
 
+  async function updateRebillingDate(date: string) {
+    const res = await fetch(`/api/clients/${clientId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rebilling_date: date }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setClient(updated);
+    }
+    setEditingBilling(false);
+  }
+
   async function updateQuoteStatus(quoteId: number, status: string) {
     const res = await fetch(`/api/clients/${clientId}/quotes/${quoteId}`, {
       method: 'PATCH',
@@ -213,7 +228,7 @@ export default function ClientDashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && client.contract_url && (
+          {client.contract_url && (
             <a href={client.contract_url} target="_blank" rel="noopener noreferrer"
               className="btn-ghost text-sm flex items-center gap-2">
               <FileText size={14} /> Contract
@@ -235,79 +250,95 @@ export default function ClientDashboardPage() {
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-10">
 
-        {/* ─── Client: Partnership Overview Card ───────────────────────── */}
-        {!isAdmin && (
-          <section className="card p-6">
-            <div className="flex items-center gap-3 mb-5">
+        {/* ─── Partnership Overview Card (everyone sees this) ──────────── */}
+        <section className="card p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
                 <span style={{ color: 'var(--accent)' }}><Users size={15} /></span>
               </div>
               <h2 className="font-semibold text-lg">Your Partnership</h2>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-              {client.start_date && (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Partner Since</p>
-                  <p className="font-semibold">{new Date(client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>{m.daysTogether} days together</p>
-                </div>
-              )}
-              {client.rebilling_date && (
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Next Billing</p>
-                  <p className="font-semibold" style={{ color: 'var(--yellow)' }}>
-                    {new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </p>
-                </div>
-              )}
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Monthly Retainer</p>
-                <p className="font-semibold">${client.retainer_price.toLocaleString()}/mo</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Status</p>
-                <p className="font-semibold" style={{ color: 'var(--green)' }}>Active</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              {client.contract_url && (
-                <a href={client.contract_url} target="_blank" rel="noopener noreferrer"
-                  className="btn-ghost text-sm flex items-center gap-2">
-                  <FileText size={14} /> View Service Agreement
-                </a>
-              )}
-              {client.meta_ad_account_id && (
-                <a
-                  href={`https://www.facebook.com/adsmanager/manage/campaigns?act=${client.meta_ad_account_id.replace('act_', '')}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="btn-ghost text-sm flex items-center gap-2">
-                  <ExternalLink size={14} /> View Ad Account
-                </a>
-              )}
-            </div>
-          </section>
-        )}
+          </div>
 
-        {/* Date strip (admin only) */}
-        {isAdmin && (client.date_launched || client.date_billed || client.rebilling_date || client.start_date) && (
-          <div className="flex flex-wrap gap-6 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
             {client.start_date && (
-              <span style={{ color: 'var(--text-muted)' }}>
-                Partner since <span className="font-semibold" style={{ color: 'var(--text)' }}>
-                  {new Date(client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                </span>
-                <span className="ml-2 font-semibold" style={{ color: 'var(--accent)' }}>· {m.daysTogether} days</span>
-              </span>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Partner Since</p>
+                <p className="font-semibold">{new Date(client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>{m.daysTogether} days together</p>
+              </div>
             )}
-            {client.rebilling_date && (
-              <span style={{ color: 'var(--text-muted)' }}>
-                Next billing <span className="font-semibold" style={{ color: 'var(--yellow)' }}>
-                  {new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                </span>
-              </span>
+
+            {/* Next Billing — editable by client */}
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Next Billing</p>
+              {editingBilling ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    className="input text-sm py-1 px-2"
+                    defaultValue={billingInput}
+                    onChange={e => setBillingInput(e.target.value)}
+                    autoFocus
+                  />
+                  <button onClick={() => updateRebillingDate(billingInput)}
+                    className="text-xs px-2 py-1 rounded" style={{ background: 'var(--accent)', color: '#fff' }}>
+                    Save
+                  </button>
+                  <button onClick={() => setEditingBilling(false)} className="text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {client.rebilling_date ? (
+                    <p className="font-semibold" style={{ color: 'var(--yellow)' }}>
+                      {new Date(client.rebilling_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  ) : (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Not set</p>
+                  )}
+                  {!isAdmin && (
+                    <button onClick={() => { setBillingInput(client.rebilling_date ?? ''); setEditingBilling(true); }}
+                      className="text-xs px-2 py-0.5 rounded border hover:opacity-70 transition-opacity"
+                      style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
+                      {client.rebilling_date ? 'Edit' : '+ Set'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Monthly Retainer</p>
+              <p className="font-semibold">${client.retainer_price.toLocaleString()}/mo</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Status</p>
+              <p className="font-semibold" style={{ color: 'var(--green)' }}>Active</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            {client.contract_url ? (
+              <a href={client.contract_url} target="_blank" rel="noopener noreferrer"
+                className="btn-ghost text-sm flex items-center gap-2">
+                <FileText size={14} /> View Service Agreement
+              </a>
+            ) : (
+              <div className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg border"
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)', borderStyle: 'dashed' }}>
+                <FileText size={14} /> Contract not uploaded yet
+              </div>
+            )}
+            {client.meta_ad_account_id && (
+              <a href={`https://www.facebook.com/adsmanager/manage/campaigns?act=${client.meta_ad_account_id.replace('act_', '')}`}
+                target="_blank" rel="noopener noreferrer"
+                className="btn-ghost text-sm flex items-center gap-2">
+                <ExternalLink size={14} /> View Ad Account
+              </a>
             )}
           </div>
-        )}
+        </section>
 
         {/* ─── SECTION 1: Ad Performance ────────────────────────────────── */}
         <section>
@@ -406,12 +437,10 @@ export default function ClientDashboardPage() {
               </div>
               <h2 className="font-semibold text-lg">Sales Results</h2>
             </div>
-            {isAdmin && (
-              <button onClick={() => { setEditingQuote(null); setShowQuote(true); }}
-                className="btn-primary text-sm flex items-center gap-2">
-                <Plus size={14} /> Add Quote
-              </button>
-            )}
+            <button onClick={() => { setEditingQuote(null); setShowQuote(true); }}
+              className="btn-primary text-sm flex items-center gap-2">
+              <Plus size={14} /> Add Quote
+            </button>
           </div>
 
           {/* Sales summary stats */}
@@ -539,92 +568,6 @@ export default function ClientDashboardPage() {
           )}
         </section>
 
-        {/* ─── Client: Add a Quote ─────────────────────────────────────── */}
-        {!isAdmin && (
-          <section>
-            <SectionHeader icon={<FileText size={15} />} title="Submit a Quote" />
-            <div className="card p-6">
-              <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-                Log a new customer quote — enter the job value, your profit margin, and optionally upload the PDF quote.
-              </p>
-              <form
-                className="space-y-4"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  setClientQuoteSaving(true);
-                  const res = await fetch(`/api/clients/${clientId}/quotes`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      customer_name: clientQuoteForm.customer_name,
-                      value: Number(clientQuoteForm.value),
-                      profit_margin: clientQuoteForm.profit_margin ? Number(clientQuoteForm.profit_margin) : null,
-                      quote_pdf_url: clientQuoteForm.quote_pdf_url || null,
-                    }),
-                  });
-                  if (res.ok) {
-                    const q = await res.json();
-                    setQuotes((prev) => [q, ...prev]);
-                    setClientQuoteForm({ customer_name: '', value: 0, profit_margin: '', quote_pdf_url: '' });
-                  }
-                  setClientQuoteSaving(false);
-                }}
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Customer Name</label>
-                    <input className="input" value={clientQuoteForm.customer_name}
-                      onChange={(e) => setClientQuoteForm((f) => ({ ...f, customer_name: e.target.value }))}
-                      placeholder="John Smith" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Quote Value ($)</label>
-                    <input className="input" type="number" min="0" step="0.01"
-                      value={clientQuoteForm.value || ''}
-                      onChange={(e) => setClientQuoteForm((f) => ({ ...f, value: Number(e.target.value) }))}
-                      placeholder="0" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Profit Margin (%)</label>
-                    <input className="input" type="number" min="0" max="100" step="0.1"
-                      value={clientQuoteForm.profit_margin}
-                      onChange={(e) => setClientQuoteForm((f) => ({ ...f, profit_margin: e.target.value }))}
-                      placeholder="e.g. 35" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Quote PDF (optional)</label>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="input text-sm py-2"
-                      disabled={pdfUploading}
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setPdfUploading(true);
-                        const fd = new FormData();
-                        fd.append('file', file);
-                        const res = await fetch('/api/upload', { method: 'POST', body: fd });
-                        if (res.ok) {
-                          const { url } = await res.json();
-                          setClientQuoteForm((f) => ({ ...f, quote_pdf_url: url }));
-                        }
-                        setPdfUploading(false);
-                      }}
-                    />
-                    {pdfUploading && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Uploading…</p>}
-                    {clientQuoteForm.quote_pdf_url && (
-                      <p className="text-xs mt-1" style={{ color: 'var(--green)' }}>PDF uploaded ✓</p>
-                    )}
-                  </div>
-                </div>
-                <button type="submit" className="btn-primary" disabled={clientQuoteSaving || pdfUploading}>
-                  {clientQuoteSaving ? 'Submitting…' : 'Submit Quote'}
-                </button>
-              </form>
-            </div>
-          </section>
-        )}
 
         {/* ─── SECTION 4: ROI / ROAS / CAC ─────────────────────────────── */}
         <section>

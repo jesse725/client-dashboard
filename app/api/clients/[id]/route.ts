@@ -24,12 +24,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const session = await getServerSession(authOptions);
   const user = session?.user as any;
-  if (!session || user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const body = await req.json();
   const db = getDb();
+
+  // Clients can only update their own rebilling_date
+  if (user.role !== 'admin') {
+    if (String(user.clientId) !== id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!('rebilling_date' in body)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    db.prepare('UPDATE clients SET rebilling_date = ? WHERE id = ?').run(body.rebilling_date, id);
+    const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+    return NextResponse.json(updated);
+  }
 
   const fields = [
     'name', 'logo_url', 'ghl_api_key', 'ghl_location_id', 'ghl_pipeline_id',
