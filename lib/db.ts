@@ -196,6 +196,21 @@ function initSchema(db: Database.Database) {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_location_id', 'NqZup9jK9NOBs8GDIyuX')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_pipeline_id', 'hDObd2e6pmi108UBHi15')").run();
 
+  // Upsert Juan's client login
+  const juanClient = db.prepare(
+    `SELECT id FROM clients WHERE LOWER(contact_email) = 'juancarlo502@yahoo.com' OR LOWER(name) LIKE '%juan%' ORDER BY id LIMIT 1`
+  ).get() as any;
+  if (juanClient) {
+    const juanEmail = 'juancarlo502@yahoo.com';
+    const juanHash = bcrypt.hashSync(juanEmail, 10);
+    const juanUser = db.prepare("SELECT id FROM users WHERE email = ?").get(juanEmail) as any;
+    if (!juanUser) {
+      db.prepare("INSERT INTO users (email, password_hash, role, client_id, name) VALUES (?, ?, 'client', ?, 'Juan')").run(juanEmail, juanHash, juanClient.id);
+    } else {
+      db.prepare("UPDATE users SET client_id = ?, role = 'client', password_hash = ? WHERE email = ?").run(juanClient.id, juanHash, juanEmail);
+    }
+  }
+
   // Upsert primary admin account
   const primaryAdmin = db.prepare("SELECT id FROM users WHERE email = 'jesse@merovamedia.com'").get();
   const primaryHash = bcrypt.hashSync('Merova88*', 10);
