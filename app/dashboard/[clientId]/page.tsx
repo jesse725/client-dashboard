@@ -9,7 +9,7 @@ import {
   ArrowLeft, RefreshCw, ExternalLink, FileText,
   TrendingUp, Users, PhoneCall, Home, XCircle, DollarSign,
   Plus, CheckCircle, Clock, Settings, Target, BarChart2, Zap,
-  MousePointerClick, Eye, Activity,
+  MousePointerClick, Eye, Activity, AlertTriangle, Pencil, Trash2,
 } from 'lucide-react';
 import QuoteModal from '@/components/QuoteModal';
 import EditClientModal from '@/components/EditClientModal';
@@ -113,6 +113,10 @@ export default function ClientDashboardPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [closingQuote, setClosingQuote] = useState<{ id: number; closedBy: string } | null>(null);
 
+  type Issue = { id: number; client_id: number; date: string; issue: string; solution: string | null; status: 'open' | 'resolved' };
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [issueForm, setIssueForm] = useState<{ id?: number; date: string; issue: string; solution: string; status: 'open' | 'resolved' } | null>(null);
+
   const user = session?.user as any;
   const isAdmin = user?.role === 'admin';
 
@@ -122,14 +126,16 @@ export default function ClientDashboardPage() {
 
   const load = useCallback(async () => {
     if (status !== 'authenticated') return;
-    const [cRes, qRes] = await Promise.all([
+    const [cRes, qRes, iRes] = await Promise.all([
       fetch(`/api/clients/${clientId}`),
       fetch(`/api/clients/${clientId}/quotes`),
+      fetch(`/api/clients/${clientId}/issues`),
     ]);
     if (!cRes.ok) { router.push('/dashboard'); return; }
-    const [c, q] = await Promise.all([cRes.json(), qRes.json()]);
+    const [c, q, i] = await Promise.all([cRes.json(), qRes.json(), iRes.json()]);
     setClient(c);
     setQuotes(Array.isArray(q) ? q : []);
+    setIssues(Array.isArray(i) ? i : []);
     setLoading(false);
   }, [clientId, status, router]);
 
@@ -590,7 +596,142 @@ export default function ClientDashboardPage() {
           </div>
         </section>
 
-        {/* ─── SECTION 5: Call Notes ────────────────────────────────────── */}
+        {/* ─── SECTION 5: Issues & Solutions ──────────────────────────── */}
+        <section>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
+                <AlertTriangle size={15} style={{ color: 'var(--accent)' }} />
+              </div>
+              <div>
+                <h2 className="font-semibold text-lg">Current Issues & Solutions</h2>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Ongoing problems and how they're being addressed</p>
+              </div>
+            </div>
+            {isAdmin && (
+              <button
+                className="btn-primary flex items-center gap-1.5 text-sm px-3 py-1.5"
+                onClick={() => setIssueForm({ date: new Date().toISOString().slice(0, 10), issue: '', solution: '', status: 'open' })}
+              >
+                <Plus size={14} /> Add Issue
+              </button>
+            )}
+          </div>
+
+          {issues.length === 0 ? (
+            <div className="card p-8 text-center" style={{ border: '1.5px dashed var(--border)' }}>
+              <AlertTriangle size={24} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>No issues logged</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {issues.map(item => (
+                <div key={item.id} className="card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{
+                          background: item.status === 'resolved' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                          color: item.status === 'resolved' ? 'var(--green)' : 'var(--red)',
+                        }}>
+                          {item.status === 'resolved' ? 'Resolved' : 'Open'}
+                        </span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {new Date(item.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                      <p className="font-medium text-sm mb-1">{item.issue}</p>
+                      {item.solution && (
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                          <span className="font-medium" style={{ color: 'var(--text)' }}>Solution: </span>
+                          {item.solution}
+                        </p>
+                      )}
+                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
+                          onClick={() => setIssueForm({ id: item.id, date: item.date, issue: item.issue, solution: item.solution ?? '', status: item.status })}
+                          title="Edit"
+                        >
+                          <Pencil size={13} style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                        <button
+                          className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
+                          onClick={async () => {
+                            if (!confirm('Delete this issue?')) return;
+                            await fetch(`/api/clients/${clientId}/issues/${item.id}`, { method: 'DELETE' });
+                            setIssues(prev => prev.filter(x => x.id !== item.id));
+                          }}
+                          title="Delete"
+                        >
+                          <Trash2 size={13} style={{ color: 'var(--red)' }} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add / Edit modal */}
+          {issueForm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+              <div className="card p-6 w-full max-w-md space-y-4">
+                <h3 className="font-semibold text-lg">{issueForm.id ? 'Edit Issue' : 'Add Issue'}</h3>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Date</label>
+                  <input type="date" className="input" value={issueForm.date}
+                    onChange={e => setIssueForm(f => f && ({ ...f, date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Issue</label>
+                  <textarea className="input" rows={3} placeholder="Describe the issue…" value={issueForm.issue}
+                    onChange={e => setIssueForm(f => f && ({ ...f, issue: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Solution / Action Taken</label>
+                  <textarea className="input" rows={3} placeholder="How is it being addressed? (optional)" value={issueForm.solution}
+                    onChange={e => setIssueForm(f => f && ({ ...f, solution: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Status</label>
+                  <select className="input" value={issueForm.status}
+                    onChange={e => setIssueForm(f => f && ({ ...f, status: e.target.value as 'open' | 'resolved' }))}>
+                    <option value="open">Open</option>
+                    <option value="resolved">Resolved</option>
+                  </select>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button className="btn-primary flex-1" onClick={async () => {
+                    if (!issueForm.issue.trim()) return;
+                    if (issueForm.id) {
+                      const res = await fetch(`/api/clients/${clientId}/issues/${issueForm.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ date: issueForm.date, issue: issueForm.issue, solution: issueForm.solution, status: issueForm.status }),
+                      });
+                      if (res.ok) { const updated = await res.json(); setIssues(prev => prev.map(x => x.id === updated.id ? updated : x)); }
+                    } else {
+                      const res = await fetch(`/api/clients/${clientId}/issues`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ date: issueForm.date, issue: issueForm.issue, solution: issueForm.solution, status: issueForm.status }),
+                      });
+                      if (res.ok) { const created = await res.json(); setIssues(prev => [created, ...prev]); }
+                    }
+                    setIssueForm(null);
+                  }}>Save</button>
+                  <button className="btn-secondary flex-1" onClick={() => setIssueForm(null)}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ─── SECTION 6: Call Notes ────────────────────────────────────── */}
         <section>
           <div className="flex items-center gap-3 mb-5">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>

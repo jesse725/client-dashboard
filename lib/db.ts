@@ -192,6 +192,19 @@ function initSchema(db: Database.Database) {
     db.exec('ALTER TABLE clients ADD COLUMN testimonial_collected INTEGER DEFAULT 0');
   }
 
+  // Issues & Solutions table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS issues_solutions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      date TEXT NOT NULL DEFAULT (date('now')),
+      issue TEXT NOT NULL,
+      solution TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   // Seed agency GHL settings
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_location_id', 'NqZup9jK9NOBs8GDIyuX')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_pipeline_id', 'hDObd2e6pmi108UBHi15')").run();
