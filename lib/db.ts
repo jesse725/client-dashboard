@@ -94,6 +94,15 @@ function initSchema(db: Database.Database) {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS sales_weekly (
+      week_start TEXT PRIMARY KEY,
+      ad_spend REAL DEFAULT 0,
+      cash_collected REAL DEFAULT 0,
+      total_ltv REAL DEFAULT 0,
+      qualified_calls INTEGER DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS sync_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       started_at TEXT DEFAULT (datetime('now')),

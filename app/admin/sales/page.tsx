@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   BarChart2, TrendingUp, Phone, PhoneCall, DollarSign,
   RefreshCw, X, ChevronDown, Check, Users, Target,
-  Calendar, AlertTriangle, Kanban, Table2,
+  Calendar, AlertTriangle, Kanban, Table2, CalendarDays,
 } from 'lucide-react';
 
 // ── Pipeline config (Merova AV Pipeline) ─────────────────────────────────────
@@ -313,6 +313,243 @@ function TableView({ opps }: { opps: Opp[] }) {
   );
 }
 
+// ── Weekly View ───────────────────────────────────────────────────────────────
+interface WeeklyManual {
+  week_start: string;
+  ad_spend: number;
+  cash_collected: number;
+  total_ltv: number;
+  qualified_calls: number;
+}
+
+function getMonday(d: Date) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function isoDate(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtWeek(weekStart: string) {
+  const start = new Date(weekStart + 'T00:00:00');
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  return `${start.toLocaleDateString('en-US', opts)} – ${end.toLocaleDateString('en-US', opts)}`;
+}
+
+function num$(n: number) {
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+function pct1(num: number, den: number) {
+  if (!den) return '—';
+  return `${((num / den) * 100).toFixed(1)}%`;
+}
+
+function ratio(num: number, den: number) {
+  if (!den) return '—';
+  return `${(num / den).toFixed(2)}x`;
+}
+
+// Small inline-editable number cell
+function EditableCell({ value, onSave, prefix }: { value: number; onSave: (v: number) => void; prefix?: string }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(value || ''));
+
+  if (editing) {
+    return (
+      <input
+        type="number"
+        autoFocus
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onBlur={() => { onSave(parseFloat(val) || 0); setEditing(false); }}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        className="w-20 text-xs px-1.5 py-1 rounded border"
+        style={{ background: 'var(--surface-2)', borderColor: 'var(--accent)', color: 'var(--text)' }}
+      />
+    );
+  }
+  return (
+    <button
+      onClick={() => { setVal(String(value || '')); setEditing(true); }}
+      className="text-sm font-semibold px-1.5 py-1 rounded hover:bg-[var(--surface-2)] transition-colors"
+      style={{ color: 'var(--text)', border: '1px dashed transparent' }}
+      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+      onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}
+    >
+      {prefix}{value ? value.toLocaleString() : '0'}
+    </button>
+  );
+}
+
+function WeeklyView({ opps }: { opps: Opp[] }) {
+  const [manual, setManual] = useState<Record<string, WeeklyManual>>({});
+  const [loaded, setLoaded] = useState(false);
+  const WEEKS_BACK = 8;
+
+  useEffect(() => {
+    (async () => {
+      const res = await fetch('/api/admin/sales-weekly');
+      if (res.ok) {
+        const rows: WeeklyManual[] = await res.json();
+        setManual(Object.fromEntries(rows.map(r => [r.week_start, r])));
+      }
+      setLoaded(true);
+    })();
+  }, []);
+
+  async function saveField(weekStart: string, field: keyof Omit<WeeklyManual, 'week_start'>, value: number) {
+    const current = manual[weekStart] || { week_start: weekStart, ad_spend: 0, cash_collected: 0, total_ltv: 0, qualified_calls: 0 };
+    const updated = { ...current, [field]: value };
+    setManual(prev => ({ ...prev, [weekStart]: updated }));
+    const res = await fetch('/api/admin/sales-weekly', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+    if (res.ok) {
+      const saved = await res.json();
+      setManual(prev => ({ ...prev, [weekStart]: saved }));
+    }
+  }
+
+  const weeks: string[] = [];
+  const thisMonday = getMonday(new Date());
+  for (let i = 0; i < WEEKS_BACK; i++) {
+    const d = new Date(thisMonday);
+    d.setDate(d.getDate() - i * 7);
+    weeks.push(isoDate(d));
+  }
+
+  const rows = weeks.map(weekStart => {
+    const weekStartDate = new Date(weekStart + 'T00:00:00');
+    const weekEndDate = new Date(weekStartDate);
+    weekEndDate.setDate(weekEndDate.getDate() + 7);
+
+    const weekOpps = opps.filter(o => {
+      const created = new Date(o.createdAt);
+      return created >= weekStartDate && created < weekEndDate;
+    });
+
+    const leads = weekOpps.length;
+    const bookedOpps = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group !== 'lead');
+    const totalBooked = bookedOpps.length;
+    const noShow = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group === 'noshow').length;
+    const showed = totalBooked - noShow;
+    const closes = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group === 'won').length;
+
+    const bookedFromAd = bookedOpps.filter(o => /ad/i.test(o.source || '')).length;
+    const bookedFromSet = totalBooked - bookedFromAd;
+
+    const m = manual[weekStart] || { week_start: weekStart, ad_spend: 0, cash_collected: 0, total_ltv: 0, qualified_calls: 0 };
+    const { ad_spend: adSpend, cash_collected: cashCollected, total_ltv: totalLtv, qualified_calls: qualified } = m;
+
+    const bookingPct = leads > 0 ? (totalBooked / leads) * 100 : 0;
+    const showPct = totalBooked > 0 ? (showed / totalBooked) * 100 : 0;
+    const qualPct = showed > 0 ? (qualified / showed) * 100 : 0;
+    const closePctQC = qualified > 0 ? (closes / qualified) * 100 : 0;
+
+    const profit = cashCollected - adSpend;
+    const frontEndROI = adSpend > 0 ? (profit / adSpend) * 100 : 0;
+    const ltvToCac = adSpend > 0 ? totalLtv / adSpend : 0;
+    const cpa = closes > 0 ? adSpend / closes : 0;
+    const cpbc = totalBooked > 0 ? adSpend / totalBooked : 0;
+    const cpsc = showed > 0 ? adSpend / showed : 0;
+    const cpqsc = qualified > 0 ? adSpend / qualified : 0;
+
+    return {
+      weekStart, leads, bookedFromAd, bookedFromSet, totalBooked, bookingPct,
+      showed, showPct, qualified, qualPct, closes, closePctQC,
+      adSpend, cashCollected, totalLtv, profit, frontEndROI, ltvToCac,
+      cpa, cpbc, cpsc, cpqsc,
+    };
+  });
+
+  if (!loaded) {
+    return <div className="card p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading weekly data…</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-3 text-xs flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
+        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+        <span>
+          <strong style={{ color: 'var(--text)' }}>Leads, Booked, Showed &amp; Closes</strong> sync automatically from the Merova AV Pipeline (bucketed by the week the opportunity was created).{' '}
+          <strong style={{ color: 'var(--text)' }}>Ad Spend, Cash Collected, Total LTV &amp; Qualified Calls</strong> are entered manually each week — click any number in those columns to edit.
+        </span>
+      </div>
+
+      <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="text-sm" style={{ minWidth: 1900 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+                {[
+                  'Week', 'Leads Gen.', 'Booked (Ad)', 'Booked (Set)', 'Total Booked', 'Booking %',
+                  'Calls Showed', 'Show %', 'Qualified Calls*', 'Qual %',
+                  'Ad Spend*', 'Cash Collected*', 'Front End ROI', 'Profit',
+                  'Total LTV*', 'LTV:CAC', 'Closes', 'CPA', 'CPBC', 'CPSC', 'CPQSC', 'Close % QC',
+                ].map(h => (
+                  <th key={h} className="text-left px-3 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.weekStart} className="hover:bg-[var(--surface-2)] transition-colors"
+                  style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <td className="px-3 py-2.5 font-medium whitespace-nowrap">{fmtWeek(r.weekStart)}</td>
+                  <td className="px-3 py-2.5">{r.leads}</td>
+                  <td className="px-3 py-2.5">{r.bookedFromAd}</td>
+                  <td className="px-3 py-2.5">{r.bookedFromSet}</td>
+                  <td className="px-3 py-2.5 font-semibold">{r.totalBooked}</td>
+                  <td className="px-3 py-2.5">{pct1(r.totalBooked, r.leads)}</td>
+                  <td className="px-3 py-2.5">{r.showed}</td>
+                  <td className="px-3 py-2.5">{pct1(r.showed, r.totalBooked)}</td>
+                  <td className="px-3 py-2.5">
+                    <EditableCell value={r.qualified} onSave={v => saveField(r.weekStart, 'qualified_calls', v)} />
+                  </td>
+                  <td className="px-3 py-2.5">{pct1(r.qualified, r.showed)}</td>
+                  <td className="px-3 py-2.5">
+                    <EditableCell value={r.adSpend} onSave={v => saveField(r.weekStart, 'ad_spend', v)} prefix="$" />
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <EditableCell value={r.cashCollected} onSave={v => saveField(r.weekStart, 'cash_collected', v)} prefix="$" />
+                  </td>
+                  <td className="px-3 py-2.5 font-semibold" style={{ color: r.frontEndROI >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {r.adSpend > 0 ? `${r.frontEndROI >= 0 ? '+' : ''}${r.frontEndROI.toFixed(1)}%` : '—'}
+                  </td>
+                  <td className="px-3 py-2.5 font-semibold" style={{ color: r.profit >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {num$(r.profit)}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <EditableCell value={r.totalLtv} onSave={v => saveField(r.weekStart, 'total_ltv', v)} prefix="$" />
+                  </td>
+                  <td className="px-3 py-2.5">{ratio(r.totalLtv, r.adSpend)}</td>
+                  <td className="px-3 py-2.5 font-semibold" style={{ color: 'var(--green)' }}>{r.closes}</td>
+                  <td className="px-3 py-2.5">{r.cpa > 0 ? num$(r.cpa) : '—'}</td>
+                  <td className="px-3 py-2.5">{r.cpbc > 0 ? num$(r.cpbc) : '—'}</td>
+                  <td className="px-3 py-2.5">{r.cpsc > 0 ? num$(r.cpsc) : '—'}</td>
+                  <td className="px-3 py-2.5">{r.cpqsc > 0 ? num$(r.cpqsc) : '—'}</td>
+                  <td className="px-3 py-2.5">{pct1(r.closes, r.qualified)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p className="text-xs px-1" style={{ color: 'var(--text-muted)' }}>* Manually entered</p>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SalesPage() {
   const { data: session, status } = useSession();
@@ -323,7 +560,7 @@ export default function SalesPage() {
   const [editingAdSpend, setEditingAdSpend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [view, setView] = useState<'funnel' | 'kanban' | 'table'>('funnel');
+  const [view, setView] = useState<'funnel' | 'kanban' | 'table' | 'weekly'>('funnel');
 
   useEffect(() => {
     const user = session?.user as any;
@@ -417,6 +654,7 @@ export default function SalesPage() {
           <div className="flex rounded-lg p-0.5 gap-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             {([
               { key: 'funnel', label: 'Funnel',  icon: <BarChart2 size={13} /> },
+              { key: 'weekly', label: 'Weekly',  icon: <CalendarDays size={13} /> },
               { key: 'kanban', label: 'Kanban',  icon: <Kanban size={13} /> },
               { key: 'table',  label: 'Table',   icon: <Table2 size={13} /> },
             ] as const).map(v => (
@@ -437,6 +675,7 @@ export default function SalesPage() {
 
       <div className="px-6 py-6">
         {view === 'funnel' && <FunnelView opps={opps} adSpend={adSpend} />}
+        {view === 'weekly' && <WeeklyView opps={opps} />}
         {view === 'kanban' && <KanbanView opps={opps} />}
         {view === 'table'  && <TableView  opps={opps} />}
       </div>
