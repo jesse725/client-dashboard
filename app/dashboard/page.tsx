@@ -19,7 +19,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
-    if (status === 'authenticated' && user?.role === 'admin') router.push('/admin/tracker');
+    if (status === 'authenticated' && user?.role === 'admin') router.push('/admin/home');
   }, [status, router, user?.role]);
 
   useEffect(() => {

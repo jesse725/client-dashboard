@@ -322,17 +322,36 @@ interface WeeklyManual {
   qualified_calls: number;
 }
 
-function getMonday(d: Date) {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-  date.setDate(diff);
-  date.setHours(0, 0, 0, 0);
-  return date;
+function isoDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
+// Tracker starts the week of Monday, July 6, 2026 — no weeks before this are shown.
+const TRACKER_START = new Date(2026, 6, 6);
+
+function monthOptions() {
+  const opts: { year: number; month: number; label: string }[] = [];
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(TRACKER_START.getFullYear(), TRACKER_START.getMonth() + i, 1);
+    opts.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+  }
+  return opts;
+}
+
+function weeksForMonth(year: number, month: number): string[] {
+  const weeks: string[] = [];
+  const d = new Date(year, month, 1);
+  while (d.getMonth() === month) {
+    if (d.getDay() === 1 && d >= TRACKER_START) weeks.push(isoDate(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return weeks;
+}
+
+function defaultMonth() {
+  const today = new Date();
+  if (today < TRACKER_START) return { year: TRACKER_START.getFullYear(), month: TRACKER_START.getMonth() };
+  return { year: today.getFullYear(), month: today.getMonth() };
 }
 
 function fmtWeek(weekStart: string) {
@@ -392,7 +411,8 @@ function EditableCell({ value, onSave, prefix }: { value: number; onSave: (v: nu
 function WeeklyView({ opps }: { opps: Opp[] }) {
   const [manual, setManual] = useState<Record<string, WeeklyManual>>({});
   const [loaded, setLoaded] = useState(false);
-  const WEEKS_BACK = 8;
+  const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
+  const months = monthOptions();
 
   useEffect(() => {
     (async () => {
@@ -420,13 +440,7 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
     }
   }
 
-  const weeks: string[] = [];
-  const thisMonday = getMonday(new Date());
-  for (let i = 0; i < WEEKS_BACK; i++) {
-    const d = new Date(thisMonday);
-    d.setDate(d.getDate() - i * 7);
-    weeks.push(isoDate(d));
-  }
+  const weeks = weeksForMonth(selectedMonth.year, selectedMonth.month);
 
   const rows = weeks.map(weekStart => {
     const weekStartDate = new Date(weekStart + 'T00:00:00');
@@ -478,6 +492,25 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <CalendarDays size={15} style={{ color: 'var(--accent)' }} />
+          <select
+            className="input w-52 text-sm"
+            value={`${selectedMonth.year}-${selectedMonth.month}`}
+            onChange={e => {
+              const [y, m] = e.target.value.split('-').map(Number);
+              setSelectedMonth({ year: y, month: m });
+            }}
+          >
+            {months.map(o => (
+              <option key={`${o.year}-${o.month}`} value={`${o.year}-${o.month}`}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Tracking starts Monday, July 6, 2026</p>
+      </div>
+
       <div className="card p-3 text-xs flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
         <span>
@@ -486,6 +519,11 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
         </span>
       </div>
 
+      {weeks.length === 0 ? (
+        <div className="card p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+          No weeks in this month — tracking starts Monday, July 6, 2026.
+        </div>
+      ) : (
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="text-sm" style={{ minWidth: 1900 }}>
@@ -545,6 +583,7 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
           </table>
         </div>
       </div>
+      )}
       <p className="text-xs px-1" style={{ color: 'var(--text-muted)' }}>* Manually entered</p>
     </div>
   );
@@ -609,7 +648,7 @@ export default function SalesPage() {
       <nav className="border-b px-6 py-4 flex items-center justify-between sticky top-0 z-10"
         style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="flex items-center gap-4 flex-wrap">
-          <Link href="/admin" className="text-sm hover:opacity-70" style={{ color: 'var(--text-muted)' }}>Admin</Link>
+          <Link href="/admin/home" className="text-sm hover:opacity-70" style={{ color: 'var(--text-muted)' }}>Home</Link>
           <span style={{ color: 'var(--border)' }}>|</span>
           <span className="font-semibold flex items-center gap-2">
             <TrendingUp size={15} style={{ color: 'var(--accent)' }} /> Sales Tracker

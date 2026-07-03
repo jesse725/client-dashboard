@@ -548,7 +548,7 @@ export default function TrackerPage() {
       <nav className="border-b px-6 py-4 flex items-center justify-between sticky top-0 z-10"
         style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="flex items-center gap-4">
-          <Link href="/admin" className="text-sm hover:opacity-70" style={{ color: 'var(--text-muted)' }}>Admin</Link>
+          <Link href="/admin/home" className="text-sm hover:opacity-70" style={{ color: 'var(--text-muted)' }}>Home</Link>
           <span style={{ color: 'var(--border)' }}>|</span>
           <span className="font-semibold flex items-center gap-2">
             <BarChart2 size={15} style={{ color: 'var(--accent)' }} /> Client Tracker
