@@ -7,6 +7,7 @@ import {
   BarChart2, TrendingUp, Phone, PhoneCall, DollarSign,
   RefreshCw, X, ChevronDown, Check, Users, Target,
   Calendar, AlertTriangle, Kanban, Table2, CalendarDays,
+  Zap, Eye, MousePointerClick, Activity,
 } from 'lucide-react';
 
 // ── Pipeline config (Merova AV Pipeline) ─────────────────────────────────────
@@ -390,38 +391,61 @@ interface WeeklyManual {
   cash_collected: number;
   total_ltv: number;
   qualified_calls: number;
+  booked_ad: number;
 }
 
 function isoDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Tracker starts the week of Monday, July 6, 2026 — no weeks before this are shown.
-const TRACKER_START = new Date(2026, 6, 6);
+function mondayOf(d: Date) {
+  const date = new Date(d);
+  const day = date.getDay();
+  date.setDate(date.getDate() - day + (day === 0 ? -6 : 1));
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
 
-function monthOptions() {
+// Tracker originally anchored to Monday, July 6, 2026 — but if real leads
+// started coming in before that, expand backward so no data is hidden.
+const TRACKER_ANCHOR = new Date(2026, 6, 6);
+
+function trackerStart(opps: Opp[]): Date {
+  if (opps.length === 0) return TRACKER_ANCHOR;
+  const earliest = opps.reduce((min, o) => {
+    const d = new Date(o.createdAt);
+    return d < min ? d : min;
+  }, new Date(opps[0].createdAt));
+  const earliestMonday = mondayOf(earliest);
+  return earliestMonday < TRACKER_ANCHOR ? earliestMonday : TRACKER_ANCHOR;
+}
+
+function monthOptions(start: Date) {
   const opts: { year: number; month: number; label: string }[] = [];
   for (let i = 0; i < 24; i++) {
-    const d = new Date(TRACKER_START.getFullYear(), TRACKER_START.getMonth() + i, 1);
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
     opts.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
   }
   return opts;
 }
 
-function weeksForMonth(year: number, month: number): string[] {
+function weeksForMonth(year: number, month: number, start: Date): string[] {
   const weeks: string[] = [];
   const d = new Date(year, month, 1);
   while (d.getMonth() === month) {
-    if (d.getDay() === 1 && d >= TRACKER_START) weeks.push(isoDate(d));
+    if (d.getDay() === 1 && d >= start) weeks.push(isoDate(d));
     d.setDate(d.getDate() + 1);
   }
   return weeks;
 }
 
-function defaultMonth() {
-  const today = new Date();
-  if (today < TRACKER_START) return { year: TRACKER_START.getFullYear(), month: TRACKER_START.getMonth() };
-  return { year: today.getFullYear(), month: today.getMonth() };
+function defaultMonth(start: Date) {
+  // Default to the month containing the Monday of the CURRENT week (not
+  // today's calendar month) so this week's data is visible without having
+  // to manually switch months when the week spans a month boundary.
+  const currentWeekMonday = mondayOf(new Date());
+  const base = currentWeekMonday < start ? start : currentWeekMonday;
+  return { year: base.getFullYear(), month: base.getMonth() };
 }
 
 function fmtWeek(weekStart: string) {
@@ -481,8 +505,11 @@ function EditableCell({ value, onSave, prefix }: { value: number; onSave: (v: nu
 function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<string, Disposition> }) {
   const [manual, setManual] = useState<Record<string, WeeklyManual>>({});
   const [loaded, setLoaded] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
-  const months = monthOptions();
+  const start = trackerStart(opps);
+  const [selectedMonth, setSelectedMonth] = useState(() => defaultMonth(start));
+  const months = monthOptions(start);
+  const [syncingMeta, setSyncingMeta] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -495,8 +522,11 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
     })();
   }, []);
 
+  const emptyManual = (weekStart: string): WeeklyManual =>
+    ({ week_start: weekStart, ad_spend: 0, cash_collected: 0, total_ltv: 0, qualified_calls: 0, booked_ad: 0 });
+
   async function saveField(weekStart: string, field: keyof Omit<WeeklyManual, 'week_start'>, value: number) {
-    const current = manual[weekStart] || { week_start: weekStart, ad_spend: 0, cash_collected: 0, total_ltv: 0, qualified_calls: 0 };
+    const current = manual[weekStart] || emptyManual(weekStart);
     const updated = { ...current, [field]: value };
     setManual(prev => ({ ...prev, [weekStart]: updated }));
     const res = await fetch('/api/admin/sales-weekly', {
@@ -510,7 +540,25 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
     }
   }
 
-  const weeks = weeksForMonth(selectedMonth.year, selectedMonth.month);
+  const weeks = weeksForMonth(selectedMonth.year, selectedMonth.month, start);
+
+  async function syncMetaSpend() {
+    if (weeks.length === 0) return;
+    setSyncingMeta(true);
+    setSyncMsg('');
+    const res = await fetch(`/api/admin/sales-meta-ads/weekly?weeks=${weeks.join(',')}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setSyncMsg(data.error || 'Meta sync failed — connect your ad account in Ad Health first.');
+      setSyncingMeta(false);
+      return;
+    }
+    for (const w of data.weeks as { weekStart: string; spend: number }[]) {
+      await saveField(w.weekStart, 'ad_spend', w.spend);
+    }
+    setSyncMsg(`Synced ad spend for ${data.weeks.length} week(s) from Meta.`);
+    setSyncingMeta(false);
+  }
 
   const rows = weeks.map(weekStart => {
     const weekStartDate = new Date(weekStart + 'T00:00:00');
@@ -531,11 +579,11 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
     const showed = bookedOpps.filter(o => oppShowed(o, dispositions)).length;
     const qualified = bookedOpps.filter(o => oppQualified(o, dispositions)).length;
 
-    const bookedFromAd = bookedOpps.filter(o => /ad/i.test(o.source || '')).length;
+    const m = manual[weekStart] || emptyManual(weekStart);
+    const { ad_spend: adSpend, cash_collected: cashCollected, total_ltv: totalLtv, booked_ad: bookedAdRaw } = m;
+    // Ad/Set split is manually adjusted; Set is whatever's left of Total Booked.
+    const bookedFromAd = Math.min(bookedAdRaw || 0, totalBooked);
     const bookedFromSet = totalBooked - bookedFromAd;
-
-    const m = manual[weekStart] || { week_start: weekStart, ad_spend: 0, cash_collected: 0, total_ltv: 0, qualified_calls: 0 };
-    const { ad_spend: adSpend, cash_collected: cashCollected, total_ltv: totalLtv } = m;
 
     const bookingPct = leads > 0 ? (totalBooked / leads) * 100 : 0;
     const showPct = totalBooked > 0 ? (showed / totalBooked) * 100 : 0;
@@ -580,21 +628,36 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
             ))}
           </select>
         </div>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Tracking starts Monday, July 6, 2026</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={syncMetaSpend}
+            disabled={syncingMeta || weeks.length === 0}
+            className="btn-ghost text-xs flex items-center gap-1.5"
+          >
+            <RefreshCw size={12} className={syncingMeta ? 'animate-spin' : ''} />
+            {syncingMeta ? 'Syncing…' : 'Sync Ad Spend from Meta'}
+          </button>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Tracking starts {fmtWeek(isoDate(start))}</p>
+        </div>
       </div>
+
+      {syncMsg && (
+        <div className="card p-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{syncMsg}</div>
+      )}
 
       <div className="card p-3 text-xs flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
         <span>
-          <strong style={{ color: 'var(--text)' }}>Leads, Booked &amp; Closes</strong> sync automatically from the Merova AV Pipeline.{' '}
-          <strong style={{ color: 'var(--text)' }}>Showed &amp; Qualified</strong> are pulled from the disposition you set per-lead in the Table view (bucketed by the week the opportunity was created).{' '}
-          <strong style={{ color: 'var(--text)' }}>Ad Spend, Cash Collected &amp; Total LTV</strong> are entered manually each week — click any number in those columns to edit.
+          <strong style={{ color: 'var(--text)' }}>Leads Gen., Total Booked &amp; Closes</strong> sync automatically from the Merova AV Pipeline.{' '}
+          <strong style={{ color: 'var(--text)' }}>Showed &amp; Qualified</strong> are pulled from the disposition you set per-lead in the Table view.{' '}
+          <strong style={{ color: 'var(--text)' }}>Booked (Ad)</strong> is a manual split of Total Booked — Booked (Set) is whatever's left over.{' '}
+          <strong style={{ color: 'var(--text)' }}>Ad Spend, Cash Collected &amp; Total LTV</strong> are entered manually, or synced from Meta via the button above. All bucketed by the week the lead came in.
         </span>
       </div>
 
       {weeks.length === 0 ? (
         <div className="card p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-          No weeks in this month — tracking starts Monday, July 6, 2026.
+          No weeks in this month.
         </div>
       ) : (
       <div className="card overflow-hidden">
@@ -603,7 +666,7 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                 {[
-                  'Week', 'Leads Gen.', 'Booked (Ad)', 'Booked (Set)', 'Total Booked', 'Booking %',
+                  'Week', 'Leads Gen.', 'Booked (Ad)*', 'Booked (Set)', 'Total Booked', 'Booking %',
                   'Calls Showed', 'Show %', 'Qualified Calls', 'Qual %',
                   'Ad Spend*', 'Cash Collected*', 'Front End ROI', 'Profit',
                   'Total LTV*', 'LTV:CAC', 'Closes', 'CPA', 'CPBC', 'CPSC', 'CPQSC', 'Close % QC',
@@ -618,7 +681,9 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
                   style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <td className="px-3 py-2.5 font-medium whitespace-nowrap">{fmtWeek(r.weekStart)}</td>
                   <td className="px-3 py-2.5">{r.leads}</td>
-                  <td className="px-3 py-2.5">{r.bookedFromAd}</td>
+                  <td className="px-3 py-2.5">
+                    <EditableCell value={r.bookedFromAd} onSave={v => saveField(r.weekStart, 'booked_ad', Math.min(v, r.totalBooked))} />
+                  </td>
                   <td className="px-3 py-2.5">{r.bookedFromSet}</td>
                   <td className="px-3 py-2.5 font-semibold">{r.totalBooked}</td>
                   <td className="px-3 py-2.5">{pct1(r.totalBooked, r.leads)}</td>
@@ -660,6 +725,120 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
   );
 }
 
+// ── Ad Health View ──────────────────────────────────────────────────────────────
+interface MetaStatsBlock { spend: number; impressions: number; clicks: number; ctr: number; cpc: number; reach: number; frequency: number }
+
+function AdHealthView() {
+  const [connected, setConnected] = useState(false);
+  const [adAccountId, setAdAccountId] = useState('');
+  const [tokenInput, setTokenInput] = useState('');
+  const [acctInput, setAcctInput] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [stats, setStats] = useState<{ last7d?: MetaStatsBlock; thisMonth?: MetaStatsBlock; lifetime?: MetaStatsBlock; error?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch('/api/admin/sales-meta-ads');
+    const data = await res.json();
+    setConnected(data.connected);
+    setAdAccountId(data.adAccountId || '');
+    setAcctInput(data.adAccountId || '');
+    setStats(data.connected ? data : null);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function save() {
+    setSaving(true);
+    await fetch('/api/admin/sales-meta-ads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: tokenInput, ad_account_id: acctInput }),
+    });
+    setTokenInput('');
+    setEditing(false);
+    setSaving(false);
+    await load();
+  }
+
+  if (loading) {
+    return <div className="card p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading ad health…</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-semibold flex items-center gap-2"><Zap size={16} style={{ color: 'var(--accent)' }} /> Meta Ad Account</h2>
+          {connected && !editing && (
+            <button onClick={() => setEditing(true)} className="btn-ghost text-xs">Edit connection</button>
+          )}
+        </div>
+        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+          Connect your Meta Ads account to pull live spend, impressions, clicks &amp; CTR — and sync accurate weekly ad spend into the Weekly tracker.
+        </p>
+
+        {(!connected || editing) ? (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>Ad Account ID (e.g. act_1234567890 or just the number)</label>
+              <input className="input" value={acctInput} onChange={e => setAcctInput(e.target.value)} placeholder="act_1234567890" />
+            </div>
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-muted)' }}>Access Token</label>
+              <input className="input" type="password" value={tokenInput} onChange={e => setTokenInput(e.target.value)}
+                placeholder={connected ? 'Enter new token to replace current one' : 'Paste your Meta access token…'} />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={save} disabled={saving || !acctInput} className="btn-primary text-sm">
+                {saving ? 'Saving…' : 'Save & Connect'}
+              </button>
+              {editing && (
+                <button onClick={() => { setEditing(false); setTokenInput(''); }} className="btn-ghost text-sm">Cancel</button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--green)' }}>
+            <Check size={12} /> Connected — {adAccountId}
+          </p>
+        )}
+      </div>
+
+      {connected && stats?.error && (
+        <div className="card p-4 text-sm" style={{ color: 'var(--red)' }}>
+          Couldn't fetch Meta stats: {stats.error}
+        </div>
+      )}
+
+      {connected && !stats?.error && stats && (
+        <>
+          {([
+            { label: 'Last 7 Days', block: stats.last7d },
+            { label: 'This Month', block: stats.thisMonth },
+            { label: 'Lifetime', block: stats.lifetime },
+          ] as const).map(({ label, block }) => block && (
+            <div key={label} className="card p-5">
+              <h3 className="font-semibold text-sm mb-3">{label}</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <StatCard label="Spend"       value={fmt$(block.spend)}                    color="#f59e0b" icon={<DollarSign size={16} />} />
+                <StatCard label="Impressions" value={block.impressions.toLocaleString()}    color="#6c63ff" icon={<Eye size={16} />} />
+                <StatCard label="Clicks"      value={block.clicks.toLocaleString()}         color="#0891b2" icon={<MousePointerClick size={16} />} />
+                <StatCard label="CTR"         value={`${block.ctr.toFixed(2)}%`}            color="#16a34a" icon={<Activity size={16} />} />
+                <StatCard label="CPC"         value={`$${block.cpc.toFixed(2)}`}            color="#dc7a3e" icon={<Target size={16} />} />
+                <StatCard label="Reach"       value={block.reach.toLocaleString()}          color="#8b5cf6" icon={<Users size={16} />} />
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SalesPage() {
   const { data: session, status } = useSession();
@@ -670,7 +849,7 @@ export default function SalesPage() {
   const [editingAdSpend, setEditingAdSpend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [view, setView] = useState<'funnel' | 'kanban' | 'table' | 'weekly'>('funnel');
+  const [view, setView] = useState<'funnel' | 'kanban' | 'table' | 'weekly' | 'adhealth'>('funnel');
   const [dispositions, setDispositions] = useState<Record<string, Disposition>>({});
 
   useEffect(() => {
@@ -788,10 +967,11 @@ export default function SalesPage() {
           {/* View switcher */}
           <div className="flex rounded-lg p-0.5 gap-0.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             {([
-              { key: 'funnel', label: 'Funnel',  icon: <BarChart2 size={13} /> },
-              { key: 'weekly', label: 'Weekly',  icon: <CalendarDays size={13} /> },
-              { key: 'kanban', label: 'Kanban',  icon: <Kanban size={13} /> },
-              { key: 'table',  label: 'Table',   icon: <Table2 size={13} /> },
+              { key: 'funnel',   label: 'Funnel',    icon: <BarChart2 size={13} /> },
+              { key: 'weekly',   label: 'Weekly',    icon: <CalendarDays size={13} /> },
+              { key: 'adhealth', label: 'Ad Health', icon: <Zap size={13} /> },
+              { key: 'kanban',   label: 'Kanban',    icon: <Kanban size={13} /> },
+              { key: 'table',    label: 'Table',     icon: <Table2 size={13} /> },
             ] as const).map(v => (
               <button key={v.key} onClick={() => setView(v.key)}
                 className="px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all"
@@ -809,10 +989,11 @@ export default function SalesPage() {
       </nav>
 
       <div className="px-6 py-6">
-        {view === 'funnel' && <FunnelView opps={opps} adSpend={adSpend} dispositions={dispositions} />}
-        {view === 'weekly' && <WeeklyView opps={opps} dispositions={dispositions} />}
-        {view === 'kanban' && <KanbanView opps={opps} dispositions={dispositions} />}
-        {view === 'table'  && <TableView  opps={opps} dispositions={dispositions} onDisposition={handleDisposition} />}
+        {view === 'funnel'   && <FunnelView opps={opps} adSpend={adSpend} dispositions={dispositions} />}
+        {view === 'weekly'   && <WeeklyView opps={opps} dispositions={dispositions} />}
+        {view === 'adhealth' && <AdHealthView />}
+        {view === 'kanban'   && <KanbanView opps={opps} dispositions={dispositions} />}
+        {view === 'table'    && <TableView  opps={opps} dispositions={dispositions} onDisposition={handleDisposition} />}
       </div>
     </div>
   );

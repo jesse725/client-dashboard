@@ -12,11 +12,12 @@ export interface MetaAdStats {
 
 export async function fetchMetaAdStats(
   accessToken: string,
-  adAccountId: string // format: act_XXXXXXXXXX
+  adAccountId: string, // format: act_XXXXXXXXXX
+  datePreset: string = 'maximum'
 ): Promise<MetaAdStats> {
   const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const fields = 'spend,impressions,clicks,ctr,cpc,reach,frequency';
-  const url = `${META_BASE}/${account}/insights?fields=${fields}&date_preset=maximum&access_token=${accessToken}`;
+  const url = `${META_BASE}/${account}/insights?fields=${fields}&date_preset=${datePreset}&access_token=${accessToken}`;
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -40,4 +41,24 @@ export async function fetchMetaAdStats(
     reach: parseInt(d.reach ?? '0', 10),
     frequency: parseFloat(d.frequency ?? '0'),
   };
+}
+
+// since/until in YYYY-MM-DD, inclusive
+export async function fetchMetaAdSpendRange(
+  accessToken: string,
+  adAccountId: string,
+  since: string,
+  until: string
+): Promise<number> {
+  const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
+  const url = `${META_BASE}/${account}/insights?fields=spend&time_range=${timeRange}&access_token=${accessToken}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Meta API ${res.status}: ${text}`);
+  }
+  const json = await res.json();
+  return parseFloat(json.data?.[0]?.spend ?? '0');
 }

@@ -100,6 +100,7 @@ function initSchema(db: Database.Database) {
       cash_collected REAL DEFAULT 0,
       total_ltv REAL DEFAULT 0,
       qualified_calls INTEGER DEFAULT 0,
+      booked_ad INTEGER DEFAULT 0,
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -126,6 +127,10 @@ function initSchema(db: Database.Database) {
   const quoteCols = (db.prepare("PRAGMA table_info(quotes)").all() as any[]).map((c: any) => c.name);
   if (!quoteCols.includes('profit_margin')) db.exec('ALTER TABLE quotes ADD COLUMN profit_margin REAL');
   if (!quoteCols.includes('quote_pdf_url')) db.exec('ALTER TABLE quotes ADD COLUMN quote_pdf_url TEXT');
+
+  // Migrations for sales_weekly table
+  const salesWeeklyCols = (db.prepare("PRAGMA table_info(sales_weekly)").all() as any[]).map((c: any) => c.name);
+  if (!salesWeeklyCols.includes('booked_ad')) db.exec('ALTER TABLE sales_weekly ADD COLUMN booked_ad INTEGER DEFAULT 0');
 
   // Migrations for call_notes table
   const callCols = (db.prepare("PRAGMA table_info(call_notes)").all() as any[]).map((c: any) => c.name);
