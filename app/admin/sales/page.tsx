@@ -52,6 +52,28 @@ interface Opp {
   source?: string;
 }
 
+interface Disposition { showed: 0 | 1 | null; qualified: 0 | 1 | null }
+
+// Single source of truth for "did this lead show / qualify" — used by every
+// view (Funnel, Weekly, Kanban, Table) so numbers never disagree across tabs.
+// Real per-lead dispositions win; only fall back to the GHL stage for leads
+// that haven't been dispositioned yet.
+function isBookedOpp(o: Opp) {
+  return STAGE_MAP[o.stageId]?.group !== 'lead';
+}
+function oppShowed(o: Opp, dispositions: Record<string, Disposition>): boolean {
+  const d = dispositions[o.id];
+  if (d?.showed === 1) return true;
+  if (d?.showed === 0) return false;
+  return STAGE_MAP[o.stageId]?.group !== 'noshow';
+}
+function oppQualified(o: Opp, dispositions: Record<string, Disposition>): boolean {
+  return dispositions[o.id]?.qualified === 1;
+}
+function oppClosed(o: Opp): boolean {
+  return STAGE_MAP[o.stageId]?.group === 'won';
+}
+
 function fmt$(n: number) {
   if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
@@ -82,39 +104,35 @@ function StatCard({ label, value, sub, color, icon }: {
 }
 
 // ── Funnel View ───────────────────────────────────────────────────────────────
-function FunnelView({ opps, adSpend }: { opps: Opp[]; adSpend: number }) {
+function FunnelView({ opps, adSpend, dispositions }: { opps: Opp[]; adSpend: number; dispositions: Record<string, Disposition> }) {
   const total = opps.length;
-
-  const byGroup = STAGES.reduce((acc, s) => {
-    const group = s.group;
-    if (!acc[group]) acc[group] = 0;
-    acc[group] += opps.filter(o => o.stageId === s.id).length;
-    return acc;
-  }, {} as Record<string, number>);
-
-  const booked = (byGroup.booked || 0) + (byGroup.noshow || 0) + (byGroup.followup || 0) + (byGroup.won || 0) + (byGroup.lost || 0);
-  const showed = booked - (byGroup.noshow || 0);
-  const won = byGroup.won || 0;
-  const wonValue = opps.filter(o => STAGE_MAP[o.stageId]?.group === 'won').reduce((s, o) => s + (o.monetaryValue || 0), 0);
+  const bookedOpps = opps.filter(isBookedOpp);
+  const booked = bookedOpps.length;
+  const showed = bookedOpps.filter(o => oppShowed(o, dispositions)).length;
+  const qualified = bookedOpps.filter(o => oppQualified(o, dispositions)).length;
+  const won = opps.filter(oppClosed).length;
+  const wonValue = opps.filter(oppClosed).reduce((s, o) => s + (o.monetaryValue || 0), 0);
   const cpa = won > 0 && adSpend > 0 ? adSpend / won : 0;
 
   const steps = [
-    { label: 'Total Leads',     count: total,  pctOf: null,   color: '#6c63ff' },
-    { label: 'Calls Booked',    count: booked, pctOf: total,  color: '#8b5cf6' },
-    { label: 'Showed Up',       count: showed, pctOf: booked, color: '#0891b2' },
-    { label: 'Closed / Won',    count: won,    pctOf: showed,  color: '#16a34a' },
+    { label: 'Total Leads',     count: total,     pctOf: null,      color: '#6c63ff' },
+    { label: 'Calls Booked',    count: booked,    pctOf: total,     color: '#8b5cf6' },
+    { label: 'Showed Up',       count: showed,    pctOf: booked,    color: '#0891b2' },
+    { label: 'Qualified',       count: qualified, pctOf: showed,    color: '#f59e0b' },
+    { label: 'Closed / Won',    count: won,       pctOf: qualified, color: '#16a34a' },
   ];
 
   return (
     <div className="space-y-6">
       {/* Key metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <StatCard label="Total Leads"    value={String(total)}                   color="#6c63ff" icon={<Users size={16} />} />
         <StatCard label="Calls Booked"   value={String(booked)}  sub={`${pct(booked, total)} book rate`}  color="#8b5cf6" icon={<Calendar size={16} />} />
         <StatCard label="Show Rate"      value={pct(showed, booked)}             color="#0891b2" icon={<PhoneCall size={16} />} sub={`${showed} showed`} />
-        <StatCard label="Close Rate"     value={pct(won, showed)}                color="#16a34a" icon={<Check size={16} />}    sub={`${won} closed`} />
+        <StatCard label="Qualified Rate" value={pct(qualified, showed)}          color="#f59e0b" icon={<Target size={16} />}    sub={`${qualified} qualified`} />
+        <StatCard label="Close Rate"     value={pct(won, qualified)}             color="#16a34a" icon={<Check size={16} />}    sub={`${won} closed`} />
         <StatCard label="Revenue Won"    value={fmt$(wonValue)}                  color="#0d9488" icon={<DollarSign size={16} />} />
-        <StatCard label="Cost / Acq."    value={cpa > 0 ? fmt$(cpa) : '—'}      color="#f59e0b" icon={<Target size={16} />}  sub={adSpend > 0 ? `${fmt$(adSpend)} ad spend` : 'Set ad spend'} />
+        <StatCard label="Cost / Acq."    value={cpa > 0 ? fmt$(cpa) : '—'}      color="#dc7a3e" icon={<Target size={16} />}  sub={adSpend > 0 ? `${fmt$(adSpend)} ad spend` : 'Set ad spend'} />
       </div>
 
       {/* Funnel */}
@@ -182,7 +200,7 @@ function FunnelView({ opps, adSpend }: { opps: Opp[]; adSpend: number }) {
 }
 
 // ── Kanban View ───────────────────────────────────────────────────────────────
-function KanbanView({ opps }: { opps: Opp[] }) {
+function KanbanView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<string, Disposition> }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
@@ -218,6 +236,24 @@ function KanbanView({ opps }: { opps: Opp[] }) {
                   {opp.monetaryValue > 0 && (
                     <p className="font-bold text-xs" style={{ color: '#16a34a' }}>{fmt$(opp.monetaryValue)}</p>
                   )}
+                  {isBookedOpp(opp) && (() => {
+                    const disp = dispositions[opp.id];
+                    const showedVal = disp?.showed ?? null;
+                    return (
+                      <div className="flex gap-1 flex-wrap">
+                        <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={{
+                          background: showedVal === 1 ? 'rgba(34,197,94,0.15)' : showedVal === 0 ? 'rgba(239,68,68,0.15)' : 'var(--surface-2)',
+                          color: showedVal === 1 ? 'var(--green)' : showedVal === 0 ? 'var(--red)' : 'var(--text-muted)',
+                        }}>{showedVal === 1 ? 'Showed' : showedVal === 0 ? 'No Show' : 'Showed?'}</span>
+                        {showedVal === 1 && (
+                          <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={{
+                            background: disp?.qualified === 1 ? 'rgba(245,158,11,0.15)' : 'var(--surface-2)',
+                            color: disp?.qualified === 1 ? 'var(--yellow)' : 'var(--text-muted)',
+                          }}>{disp?.qualified === 1 ? 'Qualified' : disp?.qualified === 0 ? 'Not Qualified' : 'Qualified?'}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {expanded === opp.id && (
                     <div className="pt-1.5 border-t space-y-1" style={{ borderColor: 'var(--border)' }}>
                       {opp.contact?.email && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{opp.contact.email}</p>}
@@ -238,9 +274,7 @@ function KanbanView({ opps }: { opps: Opp[] }) {
   );
 }
 
-// ── Disposition types & controls ───────────────────────────────────────────────
-interface Disposition { showed: 0 | 1 | null; qualified: 0 | 1 | null }
-
+// ── Disposition control ─────────────────────────────────────────────────────────
 function DispositionPill({ value, onChange }: { value: 0 | 1 | null; onChange: (v: 0 | 1 | null) => void }) {
   return (
     <div className="flex gap-1">
@@ -489,19 +523,13 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
     });
 
     const leads = weekOpps.length;
-    const bookedOpps = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group !== 'lead');
+    const bookedOpps = weekOpps.filter(isBookedOpp);
     const totalBooked = bookedOpps.length;
-    const closes = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group === 'won').length;
+    const closes = weekOpps.filter(oppClosed).length;
 
-    // Showed / Qualified come from real dispositions when recorded; fall back to
-    // the GHL stage (not no-showed) only for leads that haven't been dispositioned yet.
-    const showed = bookedOpps.filter(o => {
-      const d = dispositions[o.id];
-      if (d?.showed === 1) return true;
-      if (d?.showed === 0) return false;
-      return STAGE_MAP[o.stageId]?.group !== 'noshow';
-    }).length;
-    const qualified = bookedOpps.filter(o => dispositions[o.id]?.qualified === 1).length;
+    // Same helpers as Funnel/Table views — one source of truth for showed/qualified.
+    const showed = bookedOpps.filter(o => oppShowed(o, dispositions)).length;
+    const qualified = bookedOpps.filter(o => oppQualified(o, dispositions)).length;
 
     const bookedFromAd = bookedOpps.filter(o => /ad/i.test(o.source || '')).length;
     const bookedFromSet = totalBooked - bookedFromAd;
@@ -707,7 +735,7 @@ export default function SalesPage() {
     </div>
   );
 
-  const wonOpps = opps.filter(o => STAGE_MAP[o.stageId]?.group === 'won');
+  const wonOpps = opps.filter(oppClosed);
   const totalRevenue = wonOpps.reduce((s, o) => s + (o.monetaryValue || 0), 0);
 
   return (
@@ -781,9 +809,9 @@ export default function SalesPage() {
       </nav>
 
       <div className="px-6 py-6">
-        {view === 'funnel' && <FunnelView opps={opps} adSpend={adSpend} />}
+        {view === 'funnel' && <FunnelView opps={opps} adSpend={adSpend} dispositions={dispositions} />}
         {view === 'weekly' && <WeeklyView opps={opps} dispositions={dispositions} />}
-        {view === 'kanban' && <KanbanView opps={opps} />}
+        {view === 'kanban' && <KanbanView opps={opps} dispositions={dispositions} />}
         {view === 'table'  && <TableView  opps={opps} dispositions={dispositions} onDisposition={handleDisposition} />}
       </div>
     </div>
