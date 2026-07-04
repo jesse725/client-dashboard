@@ -103,6 +103,13 @@ function initSchema(db: Database.Database) {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS lead_dispositions (
+      opp_id TEXT PRIMARY KEY,
+      showed INTEGER,
+      qualified INTEGER,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS sync_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       started_at TEXT DEFAULT (datetime('now')),

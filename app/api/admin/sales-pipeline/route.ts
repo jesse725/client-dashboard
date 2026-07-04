@@ -46,7 +46,20 @@ export async function GET() {
   const adSpend = adSpendRow ? parseFloat(adSpendRow.value) : 0;
 
   try {
-    const opportunities = await fetchAllOpps();
+    const raw = await fetchAllOpps();
+    // GHL returns pipelineStageId, not stageId — normalize for the frontend
+    const opportunities = raw.map((o: any) => ({
+      id: o.id,
+      name: o.name,
+      monetaryValue: o.monetaryValue,
+      status: o.status,
+      stageId: o.pipelineStageId,
+      assignedTo: o.assignedTo,
+      contact: o.contact,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
+      source: o.source,
+    }));
     return NextResponse.json({ opportunities, adSpend });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

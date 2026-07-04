@@ -238,8 +238,32 @@ function KanbanView({ opps }: { opps: Opp[] }) {
   );
 }
 
+// ── Disposition types & controls ───────────────────────────────────────────────
+interface Disposition { showed: 0 | 1 | null; qualified: 0 | 1 | null }
+
+function DispositionPill({ value, onChange }: { value: 0 | 1 | null; onChange: (v: 0 | 1 | null) => void }) {
+  return (
+    <div className="flex gap-1">
+      <button
+        onClick={() => onChange(value === 1 ? null : 1)}
+        className="text-xs px-2 py-0.5 rounded-md font-medium transition-colors"
+        style={{ background: value === 1 ? 'var(--green)' : 'var(--surface-2)', color: value === 1 ? '#fff' : 'var(--text-muted)', border: '1px solid var(--border)' }}
+      >Yes</button>
+      <button
+        onClick={() => onChange(value === 0 ? null : 0)}
+        className="text-xs px-2 py-0.5 rounded-md font-medium transition-colors"
+        style={{ background: value === 0 ? 'var(--red)' : 'var(--surface-2)', color: value === 0 ? '#fff' : 'var(--text-muted)', border: '1px solid var(--border)' }}
+      >No</button>
+    </div>
+  );
+}
+
 // ── Table View ────────────────────────────────────────────────────────────────
-function TableView({ opps }: { opps: Opp[] }) {
+function TableView({ opps, dispositions, onDisposition }: {
+  opps: Opp[];
+  dispositions: Record<string, Disposition>;
+  onDisposition: (oppId: string, field: 'showed' | 'qualified', value: 0 | 1 | null) => void;
+}) {
   const [sort, setSort] = useState<'date' | 'value' | 'stage'>('date');
 
   const sorted = [...opps].sort((a, b) => {
@@ -270,7 +294,7 @@ function TableView({ opps }: { opps: Opp[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-              {['Contact', 'Stage', 'Value', 'Source', 'Date Added'].map(h => (
+              {['Contact', 'Stage', 'Value', 'Source', 'Date Added', 'Showed Up?', 'Qualified?'].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
               ))}
             </tr>
@@ -278,6 +302,8 @@ function TableView({ opps }: { opps: Opp[] }) {
           <tbody>
             {sorted.map((opp, i) => {
               const stage = STAGE_MAP[opp.stageId];
+              const isBooked = stage?.group !== 'lead';
+              const disp = dispositions[opp.id] || { showed: null, qualified: null };
               return (
                 <tr key={opp.id}
                   className="hover:bg-[var(--surface-2)] transition-colors"
@@ -300,11 +326,21 @@ function TableView({ opps }: { opps: Opp[] }) {
                   <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
                     {new Date(opp.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
+                  <td className="px-4 py-3">
+                    {isBooked ? (
+                      <DispositionPill value={disp.showed} onChange={v => onDisposition(opp.id, 'showed', v)} />
+                    ) : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    {isBooked && disp.showed === 1 ? (
+                      <DispositionPill value={disp.qualified} onChange={v => onDisposition(opp.id, 'qualified', v)} />
+                    ) : <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>}
+                  </td>
                 </tr>
               );
             })}
             {sorted.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No opportunities in pipeline yet</td></tr>
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No opportunities in pipeline yet</td></tr>
             )}
           </tbody>
         </table>
@@ -408,7 +444,7 @@ function EditableCell({ value, onSave, prefix }: { value: number; onSave: (v: nu
   );
 }
 
-function WeeklyView({ opps }: { opps: Opp[] }) {
+function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<string, Disposition> }) {
   const [manual, setManual] = useState<Record<string, WeeklyManual>>({});
   const [loaded, setLoaded] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
@@ -455,15 +491,23 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
     const leads = weekOpps.length;
     const bookedOpps = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group !== 'lead');
     const totalBooked = bookedOpps.length;
-    const noShow = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group === 'noshow').length;
-    const showed = totalBooked - noShow;
     const closes = weekOpps.filter(o => STAGE_MAP[o.stageId]?.group === 'won').length;
+
+    // Showed / Qualified come from real dispositions when recorded; fall back to
+    // the GHL stage (not no-showed) only for leads that haven't been dispositioned yet.
+    const showed = bookedOpps.filter(o => {
+      const d = dispositions[o.id];
+      if (d?.showed === 1) return true;
+      if (d?.showed === 0) return false;
+      return STAGE_MAP[o.stageId]?.group !== 'noshow';
+    }).length;
+    const qualified = bookedOpps.filter(o => dispositions[o.id]?.qualified === 1).length;
 
     const bookedFromAd = bookedOpps.filter(o => /ad/i.test(o.source || '')).length;
     const bookedFromSet = totalBooked - bookedFromAd;
 
     const m = manual[weekStart] || { week_start: weekStart, ad_spend: 0, cash_collected: 0, total_ltv: 0, qualified_calls: 0 };
-    const { ad_spend: adSpend, cash_collected: cashCollected, total_ltv: totalLtv, qualified_calls: qualified } = m;
+    const { ad_spend: adSpend, cash_collected: cashCollected, total_ltv: totalLtv } = m;
 
     const bookingPct = leads > 0 ? (totalBooked / leads) * 100 : 0;
     const showPct = totalBooked > 0 ? (showed / totalBooked) * 100 : 0;
@@ -514,8 +558,9 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
       <div className="card p-3 text-xs flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
         <span>
-          <strong style={{ color: 'var(--text)' }}>Leads, Booked, Showed &amp; Closes</strong> sync automatically from the Merova AV Pipeline (bucketed by the week the opportunity was created).{' '}
-          <strong style={{ color: 'var(--text)' }}>Ad Spend, Cash Collected, Total LTV &amp; Qualified Calls</strong> are entered manually each week — click any number in those columns to edit.
+          <strong style={{ color: 'var(--text)' }}>Leads, Booked &amp; Closes</strong> sync automatically from the Merova AV Pipeline.{' '}
+          <strong style={{ color: 'var(--text)' }}>Showed &amp; Qualified</strong> are pulled from the disposition you set per-lead in the Table view (bucketed by the week the opportunity was created).{' '}
+          <strong style={{ color: 'var(--text)' }}>Ad Spend, Cash Collected &amp; Total LTV</strong> are entered manually each week — click any number in those columns to edit.
         </span>
       </div>
 
@@ -531,7 +576,7 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                 {[
                   'Week', 'Leads Gen.', 'Booked (Ad)', 'Booked (Set)', 'Total Booked', 'Booking %',
-                  'Calls Showed', 'Show %', 'Qualified Calls*', 'Qual %',
+                  'Calls Showed', 'Show %', 'Qualified Calls', 'Qual %',
                   'Ad Spend*', 'Cash Collected*', 'Front End ROI', 'Profit',
                   'Total LTV*', 'LTV:CAC', 'Closes', 'CPA', 'CPBC', 'CPSC', 'CPQSC', 'Close % QC',
                 ].map(h => (
@@ -551,9 +596,7 @@ function WeeklyView({ opps }: { opps: Opp[] }) {
                   <td className="px-3 py-2.5">{pct1(r.totalBooked, r.leads)}</td>
                   <td className="px-3 py-2.5">{r.showed}</td>
                   <td className="px-3 py-2.5">{pct1(r.showed, r.totalBooked)}</td>
-                  <td className="px-3 py-2.5">
-                    <EditableCell value={r.qualified} onSave={v => saveField(r.weekStart, 'qualified_calls', v)} />
-                  </td>
+                  <td className="px-3 py-2.5 font-semibold">{r.qualified}</td>
                   <td className="px-3 py-2.5">{pct1(r.qualified, r.showed)}</td>
                   <td className="px-3 py-2.5">
                     <EditableCell value={r.adSpend} onSave={v => saveField(r.weekStart, 'ad_spend', v)} prefix="$" />
@@ -600,6 +643,7 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [view, setView] = useState<'funnel' | 'kanban' | 'table' | 'weekly'>('funnel');
+  const [dispositions, setDispositions] = useState<Record<string, Disposition>>({});
 
   useEffect(() => {
     const user = session?.user as any;
@@ -609,18 +653,42 @@ export default function SalesPage() {
   const loadData = useCallback(async () => {
     if (status !== 'authenticated') return;
     setSyncing(true);
-    const res = await fetch('/api/admin/sales-pipeline');
-    if (res.ok) {
-      const data = await res.json();
+    const [pipelineRes, dispRes] = await Promise.all([
+      fetch('/api/admin/sales-pipeline'),
+      fetch('/api/admin/lead-dispositions'),
+    ]);
+    if (pipelineRes.ok) {
+      const data = await pipelineRes.json();
       setOpps(data.opportunities ?? []);
       setAdSpend(data.adSpend ?? 0);
       setAdSpendInput(String(data.adSpend ?? ''));
+    }
+    if (dispRes.ok) {
+      const rows: { opp_id: string; showed: 0 | 1 | null; qualified: 0 | 1 | null }[] = await dispRes.json();
+      setDispositions(Object.fromEntries(rows.map(r => [r.opp_id, { showed: r.showed, qualified: r.qualified }])));
     }
     setLoading(false);
     setSyncing(false);
   }, [status]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  async function handleDisposition(oppId: string, field: 'showed' | 'qualified', value: 0 | 1 | null) {
+    const current = dispositions[oppId] || { showed: null, qualified: null };
+    const updated = { ...current, [field]: value };
+    // Un-showing a lead clears its qualified status too
+    if (field === 'showed' && value !== 1) updated.qualified = null;
+    setDispositions(prev => ({ ...prev, [oppId]: updated }));
+    const res = await fetch('/api/admin/lead-dispositions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opp_id: oppId, ...updated }),
+    });
+    if (res.ok) {
+      const saved = await res.json();
+      setDispositions(prev => ({ ...prev, [oppId]: { showed: saved.showed, qualified: saved.qualified } }));
+    }
+  }
 
   async function saveAdSpend() {
     const val = parseFloat(adSpendInput) || 0;
@@ -714,9 +782,9 @@ export default function SalesPage() {
 
       <div className="px-6 py-6">
         {view === 'funnel' && <FunnelView opps={opps} adSpend={adSpend} />}
-        {view === 'weekly' && <WeeklyView opps={opps} />}
+        {view === 'weekly' && <WeeklyView opps={opps} dispositions={dispositions} />}
         {view === 'kanban' && <KanbanView opps={opps} />}
-        {view === 'table'  && <TableView  opps={opps} />}
+        {view === 'table'  && <TableView  opps={opps} dispositions={dispositions} onDisposition={handleDisposition} />}
       </div>
     </div>
   );
