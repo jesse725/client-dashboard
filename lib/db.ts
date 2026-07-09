@@ -212,6 +212,9 @@ function initSchema(db: Database.Database) {
   if (!colNames.includes('testimonial_collected')) {
     db.exec('ALTER TABLE clients ADD COLUMN testimonial_collected INTEGER DEFAULT 0');
   }
+  if (!colNames.includes('ad_account_url')) {
+    db.exec('ALTER TABLE clients ADD COLUMN ad_account_url TEXT');
+  }
 
   // Issues & Solutions table
   db.exec(`

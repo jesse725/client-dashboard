@@ -17,18 +17,21 @@ import CallNotesSection from '@/components/CallNotesSection';
 
 // ─── Small reusable components ────────────────────────────────────────────────
 
-function SectionHeader({ icon, title, badge }: { icon: React.ReactNode; title: string; badge?: string }) {
+function SectionHeader({ icon, title, badge, action }: { icon: React.ReactNode; title: string; badge?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
-        <span style={{ color: 'var(--accent)' }}>{icon}</span>
+    <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent)22' }}>
+          <span style={{ color: 'var(--accent)' }}>{icon}</span>
+        </div>
+        <h2 className="font-semibold text-lg">{title}</h2>
+        {badge && (
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
+            {badge}
+          </span>
+        )}
       </div>
-      <h2 className="font-semibold text-lg">{title}</h2>
-      {badge && (
-        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-          {badge}
-        </span>
-      )}
+      {action}
     </div>
   );
 }
@@ -295,7 +298,12 @@ export default function ClientDashboardPage() {
                 <FileText size={14} /> Contract not uploaded yet
               </div>
             )}
-            {client.meta_ad_account_id && (
+            {(client as any).ad_account_url ? (
+              <a href={(client as any).ad_account_url} target="_blank" rel="noopener noreferrer"
+                className="btn-ghost text-sm flex items-center gap-2">
+                <ExternalLink size={14} /> View Ad Account
+              </a>
+            ) : client.meta_ad_account_id && (
               <a href={`https://www.facebook.com/adsmanager/manage/campaigns?act=${client.meta_ad_account_id.replace('act_', '')}`}
                 target="_blank" rel="noopener noreferrer"
                 className="btn-ghost text-sm flex items-center gap-2">

@@ -14,6 +14,7 @@ export interface Client {
   retainer_price: number;
   ad_spend: number;
   contract_url: string | null;
+  ad_account_url: string | null;
   slack_url: string | null;
   start_date: string;
   ghl_custom_fields: string | null;

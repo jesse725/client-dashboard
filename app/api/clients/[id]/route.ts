@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     'stage_leads', 'stage_contacted', 'stage_unqualified', 'stage_phone', 'stage_inhome',
     'retainer_price', 'ad_spend', 'daily_ad_spend', 'contract_url', 'slack_url',
     'start_date', 'meta_access_token', 'meta_ad_account_id', 'next_checkin',
-    'date_launched', 'date_billed', 'rebilling_date',
+    'date_launched', 'date_billed', 'rebilling_date', 'ad_account_url',
   ];
 
   const updates = fields.filter((f) => f in body);

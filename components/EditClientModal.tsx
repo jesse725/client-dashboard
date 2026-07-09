@@ -36,6 +36,7 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
     ad_spend: String(client.ad_spend),
     next_checkin: client.next_checkin ?? '',
     contract_url: client.contract_url ?? '',
+    ad_account_url: (client as any).ad_account_url ?? '',
 
     meta_ad_account_id: client.meta_ad_account_id ?? '',
     meta_access_token: client.meta_access_token ?? '',
@@ -185,6 +186,10 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
             <div>
               <Label>Contract URL</Label>
               <input className="input" type="url" value={form.contract_url} onChange={(e) => set('contract_url', e.target.value)} placeholder="https://…" />
+            </div>
+            <div>
+              <Label>Ad Account Link (client can click to view their ad account)</Label>
+              <input className="input" type="url" value={form.ad_account_url} onChange={(e) => set('ad_account_url', e.target.value)} placeholder="https://adsmanager.facebook.com/…" />
             </div>
           </div>
 
