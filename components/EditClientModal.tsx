@@ -104,8 +104,8 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div className="card w-full max-w-lg p-6 my-4">
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="card w-full max-w-lg p-6 my-8 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-lg">Edit Client — {client.name}</h2>
           <button onClick={onClose} style={{ color: 'var(--text-muted)' }} className="hover:opacity-70"><X size={18} /></button>
