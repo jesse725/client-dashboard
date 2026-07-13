@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { fetchLocationPipelines } from '@/lib/ghl';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -71,16 +72,19 @@ export async function POST(req: NextRequest) {
   const result = db.prepare(`
     INSERT INTO clients (
       name, slug, logo_url,
+      contact_name, contact_email, contact_phone, address, ein, target_locations,
       ghl_api_key, ghl_location_id, ghl_pipeline_id,
       stage_leads, stage_contacted, stage_unqualified, stage_phone, stage_inhome,
       retainer_price, ad_spend, daily_ad_spend,
       meta_access_token, meta_ad_account_id,
       contract_url, slack_url,
       start_date, date_launched, date_billed, rebilling_date, next_checkin,
-      share_token
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      share_token, onboard_status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     body.name, slug, body.logo_url ?? null,
+    body.contact_name ?? null, body.contact_email ?? null, body.contact_phone ?? null,
+    body.address ?? null, body.ein ?? null, body.target_locations ?? null,
     body.ghl_api_key ?? null, body.ghl_location_id ?? null, pipelineId,
     stageLeads, stageContacted, stageUnqualified, stagePhone, stageInhome,
     body.retainer_price ?? 0, body.ad_spend ?? 0, body.daily_ad_spend ?? 0,
@@ -89,9 +93,26 @@ export async function POST(req: NextRequest) {
     body.start_date ?? new Date().toISOString().slice(0, 10),
     body.date_launched ?? null, body.date_billed ?? null,
     body.rebilling_date ?? null, body.next_checkin ?? null,
-    shareToken,
+    shareToken, 'active',
   );
 
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
+  const clientId = result.lastInsertRowid;
+
+  // Auto-create a client login so they can sign in with the onboarding
+  // email immediately — no separate manual setup step.
+  const email = (body.contact_email ?? '').trim().toLowerCase();
+  if (email) {
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as any;
+    const hash = bcrypt.hashSync(email, 10);
+    if (existingUser) {
+      db.prepare("UPDATE users SET client_id = ?, role = 'client', password_hash = ?, name = ? WHERE email = ?")
+        .run(clientId, hash, body.contact_name || body.name, email);
+    } else {
+      db.prepare("INSERT INTO users (email, password_hash, role, client_id, name) VALUES (?, ?, 'client', ?, ?)")
+        .run(email, hash, clientId, body.contact_name || body.name);
+    }
+  }
+
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
   return NextResponse.json(client, { status: 201 });
 }

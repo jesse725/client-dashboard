@@ -92,7 +92,12 @@ function OnboardPage() {
 
   function applyPrefill(data: any) {
     setPrefillData(data);
-    setForm(f => ({ ...f, name: data.name ?? f.name }));
+    setForm(f => ({
+      ...f,
+      name: data.name ?? f.name,
+      contact_name: data.contact_name ?? f.contact_name,
+      contact_email: data.contact_email ?? f.contact_email,
+    }));
   }
 
   function handlePendingSelect(id: string) {
