@@ -513,10 +513,15 @@ export default function TrackerPage() {
   }
 
   function getEffectiveStage(c: ClientRow): string {
+    // A manually-set stage (drag-and-drop, or At Risk/Churned) always wins —
+    // otherwise cards synced to a live GHL opportunity would snap right back
+    // to their GHL stage on every render, making them undraggable. Only fall
+    // back to the GHL-derived or time-based stage when nothing's been set yet.
     if (c.client_status === 'At Risk' || c.client_status === 'Churned') return c.client_status;
+    if (c.client_status && KANBAN_STAGES.find(s => s.key === c.client_status)) return c.client_status;
     const opp = getGHLOpp(c);
-    if (opp) return GHL_STAGE_MAP[opp.stageId] ?? c.client_status ?? autoStage(c);
-    return c.client_status && KANBAN_STAGES.find(s => s.key === c.client_status) ? c.client_status : autoStage(c);
+    if (opp) return GHL_STAGE_MAP[opp.stageId] ?? autoStage(c);
+    return autoStage(c);
   }
 
   async function moveToStage(clientId: number, stage: string) {

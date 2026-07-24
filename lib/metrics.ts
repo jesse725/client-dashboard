@@ -28,13 +28,15 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
   const closeRateByValue = totalQuoted > 0 ? (totalRevenue / totalQuoted) * 100 : 0;
   const closeRateByCount = quotes.length > 0 ? (closedDeals / quotes.length) * 100 : 0;
 
-  // Ad spend: prefer live Meta spend → daily_ad_spend calc → manual ad_spend
+  // Ad spend: prefer live Meta spend → exact manual override → daily_ad_spend estimate.
+  // A manual entry is a deliberate "this is the real number" action, so it should
+  // beat the daily-budget × days-together estimate, not the other way around.
   const totalAdSpend =
     (metaSpend != null && metaSpend > 0)
       ? metaSpend
-      : (client.daily_ad_spend ?? 0) > 0
-        ? client.daily_ad_spend * daysTogether
-        : client.ad_spend;
+      : (client.ad_spend ?? 0) > 0
+        ? client.ad_spend
+        : (client.daily_ad_spend ?? 0) * daysTogether;
 
   const totalRetainer = client.retainer_price * monthsWorked;
   const totalCost     = totalAdSpend + totalRetainer;
