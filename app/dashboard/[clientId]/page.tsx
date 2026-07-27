@@ -178,6 +178,7 @@ export default function ClientDashboardPage() {
   const roi = totalCost > 0 ? ((m.totalRevenue - totalCost) / totalCost) * 100 : 0;
   const roas = adSpend > 0 ? m.totalRevenue / adSpend : 0;
   const cpl = pipeline.leads > 0 ? adSpend / pipeline.leads : 0;
+  const cpih = (pipeline.inhome || 0) > 0 ? adSpend / (pipeline.inhome || 0) : 0;
 
   const totalQuoted = quotes.reduce((s, q) => s + q.value, 0);
   const openValue = quotes.filter(q => q.status === 'open').reduce((s, q) => s + q.value, 0);
@@ -331,6 +332,12 @@ export default function ClientDashboardPage() {
                 value={cpl > 0 ? `$${Math.round(cpl).toLocaleString()}` : '—'}
                 sub="cost per lead"
                 icon={<Target size={14} />}
+              />
+              <StatCard
+                label="Cost / In-Home"
+                value={cpih > 0 ? `$${Math.round(cpih).toLocaleString()}` : '—'}
+                sub={`cost per in-home est. (${pipeline.inhome || 0})`}
+                icon={<Home size={14} />}
               />
               {metaStats ? (
                 <>

@@ -207,7 +207,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
           <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                {['Client', 'Stage', 'Tenure', 'Retainer', 'CPL', 'Leads', 'In-Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
+                {['Client', 'Stage', 'Tenure', 'Retainer', 'CPL', 'Leads', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -216,6 +216,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
               {clients.map((c, i) => {
                 const totalAdSpend = c.ad_spend || (c.daily_ad_spend * c.days_as_client);
                 const cpl = c.cached_leads > 0 ? totalAdSpend / c.cached_leads : 0;
+                const cpih = c.cached_inhome > 0 ? totalAdSpend / c.cached_inhome : 0;
                 const closeRate = c.total_quotes > 0 ? (c.closed_deals / c.total_quotes) * 100 : 0;
                 const sentiment = c.latest_sentiment ? SENTIMENT_CONFIG[c.latest_sentiment] : null;
                 const stage = KANBAN_STAGES.find(s => s.key === c.client_status) ?? KANBAN_STAGES.find(s => s.key === autoStage(c));
@@ -250,6 +251,9 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                     </td>
                     <td className="px-4 py-3 text-center">{c.cached_leads > 0 ? c.cached_leads : '—'}</td>
                     <td className="px-4 py-3 text-center">{c.cached_inhome > 0 ? c.cached_inhome : '—'}</td>
+                    <td className="px-4 py-3 text-center font-semibold" style={{ color: cpih > 0 && cpih <= 150 ? 'var(--green)' : cpih > 400 ? 'var(--red)' : cpih > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
+                      {cpih > 0 ? `$${Math.round(cpih)}` : '—'}
+                    </td>
                     <td className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--green)' }}>{c.closed_deals}</td>
                     <td className="px-4 py-3 text-center" style={{ color: closeRate >= 30 ? 'var(--green)' : closeRate > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {c.total_quotes > 0 ? `${closeRate.toFixed(0)}%` : '—'}

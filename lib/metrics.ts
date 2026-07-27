@@ -45,6 +45,7 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
   const cac  = closedDeals > 0 ? totalCost / closedDeals : 0;
   const roas = totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0;
   const cpl  = pipeline.leads > 0 ? totalAdSpend / pipeline.leads : 0;
+  const cpih = (pipeline.inhome || 0) > 0 ? totalAdSpend / (pipeline.inhome || 0) : 0;
 
   // Funnel conversion rates
   const totalAppointments = (pipeline.phone || 0) + (pipeline.inhome || 0);
@@ -77,6 +78,7 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
     cac,
     roas,
     cpl,
+    cpih,
     totalAppointments,
     totalContacted,
     contactRate,
