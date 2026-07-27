@@ -27,6 +27,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const agencyKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
   const apiKey = resolveApiKey(client.ghl_api_key, agencyKey);
 
+  // Scope Meta stats to the partnership window — start_date through today —
+  // so a shared/reused ad account doesn't pull in pre-partnership spend.
+  const since = client.start_date;
+  const until = new Date().toISOString().slice(0, 10);
+
   try {
     const [pipeline, metaStats] = await Promise.all([
       fetchGHLPipelineStats(apiKey, client.ghl_location_id, client.ghl_pipeline_id, {
@@ -37,7 +42,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         inhome: client.stage_inhome ?? undefined,
       }),
       client.meta_access_token && client.meta_ad_account_id
-        ? fetchMetaAdStats(client.meta_access_token, client.meta_ad_account_id).catch(() => null)
+        ? fetchMetaAdStats(client.meta_access_token, client.meta_ad_account_id, 'maximum', { since, until }).catch(() => null)
         : Promise.resolve(null),
     ]);
     // Cache pipeline counts for tracker view

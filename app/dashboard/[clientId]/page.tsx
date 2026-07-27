@@ -323,7 +323,7 @@ export default function ClientDashboardPage() {
               <StatCard
                 label="Ad Spend"
                 value={`$${Math.round(adSpend).toLocaleString()}`}
-                sub={metaStats ? 'all-time from Meta' : client.daily_ad_spend > 0 ? `$${client.daily_ad_spend}/day` : 'manual'}
+                sub={metaStats ? 'since partnership start' : client.daily_ad_spend > 0 ? `$${client.daily_ad_spend}/day` : 'manual'}
                 color="var(--accent)"
                 icon={<DollarSign size={14} />}
               />

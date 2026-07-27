@@ -13,11 +13,15 @@ export interface MetaAdStats {
 export async function fetchMetaAdStats(
   accessToken: string,
   adAccountId: string, // format: act_XXXXXXXXXX
-  datePreset: string = 'maximum'
+  datePreset: string = 'maximum',
+  range?: { since: string; until: string } // overrides datePreset when provided (YYYY-MM-DD, inclusive)
 ): Promise<MetaAdStats> {
   const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const fields = 'spend,impressions,clicks,ctr,cpc,reach,frequency';
-  const url = `${META_BASE}/${account}/insights?fields=${fields}&date_preset=${datePreset}&access_token=${accessToken}`;
+  const dateParam = range
+    ? `time_range=${encodeURIComponent(JSON.stringify(range))}`
+    : `date_preset=${datePreset}`;
+  const url = `${META_BASE}/${account}/insights?fields=${fields}&${dateParam}&access_token=${accessToken}`;
 
   const res = await fetch(url);
   if (!res.ok) {
