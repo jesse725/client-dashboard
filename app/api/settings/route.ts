@@ -3,7 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 
-const ALLOWED_KEYS = ['ghl_agency_key', 'sync_interval_minutes', 'last_sync'];
+const ALLOWED_KEYS = ['ghl_agency_key', 'sync_interval_minutes', 'last_sync', 'whop_api_key', 'whop_webhook_secret'];
+const MASKED_KEYS = ['ghl_agency_key', 'whop_api_key', 'whop_webhook_secret'];
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -16,8 +17,8 @@ export async function GET() {
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
   const settings: Record<string, string> = {};
   for (const row of rows) {
-    // Mask the agency key — only send whether it's set, not the actual value
-    if (row.key === 'ghl_agency_key') {
+    // Mask secrets — only send whether they're set, not the actual value
+    if (MASKED_KEYS.includes(row.key)) {
       settings[row.key] = row.value ? '••••••••' : '';
     } else {
       settings[row.key] = row.value;
@@ -38,8 +39,8 @@ export async function PATCH(req: NextRequest) {
 
   for (const [key, value] of Object.entries(body)) {
     if (!ALLOWED_KEYS.includes(key)) continue;
-    // Don't overwrite the agency key if masked value sent back
-    if (key === 'ghl_agency_key' && String(value).includes('•')) continue;
+    // Don't overwrite a secret if its masked placeholder was sent back unchanged
+    if (MASKED_KEYS.includes(key) && String(value).includes('•')) continue;
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value));
   }
 

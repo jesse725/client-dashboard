@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, Plus, X, RefreshCw, CheckCircle, AlertCircle,
   Clock, Settings2, Key, Users, ChevronDown, FileInput, Copy, ExternalLink, BarChart2, TrendingUp,
+  CreditCard,
 } from 'lucide-react';
 import StageMappingModal from '@/components/StageMappingModal';
 
@@ -44,6 +45,12 @@ export default function AdminPage() {
   const [pendingClients, setPendingClients] = useState<PendingClient[]>([]);
   const [activeTab, setActiveTab] = useState<'sync' | 'users' | 'forms'>('sync');
   const [copied, setCopied] = useState(false);
+  const [whopApiKey, setWhopApiKey] = useState('');
+  const [whopApiKeyInput, setWhopApiKeyInput] = useState('');
+  const [whopSecret, setWhopSecret] = useState('');
+  const [whopSecretInput, setWhopSecretInput] = useState('');
+  const [savingWhop, setSavingWhop] = useState(false);
+  const [copiedWhop, setCopiedWhop] = useState(false);
 
   const user = session?.user as any;
 
@@ -69,6 +76,8 @@ export default function AdminPage() {
     setLastSync(s.lastSync ?? null);
     setAgencyKey(settings.ghl_agency_key ?? '');
     setSyncInterval(settings.sync_interval_minutes ?? '30');
+    setWhopApiKey(settings.whop_api_key ?? '');
+    setWhopSecret(settings.whop_webhook_secret ?? '');
   }, [status]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -94,6 +103,23 @@ export default function AdminPage() {
     setAgencyKeyInput('');
     await loadData();
     setSavingKey(false);
+  }
+
+  async function handleSaveWhop(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingWhop(true);
+    await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        whop_api_key: whopApiKeyInput || whopApiKey,
+        whop_webhook_secret: whopSecretInput || whopSecret,
+      }),
+    });
+    setWhopApiKeyInput('');
+    setWhopSecretInput('');
+    await loadData();
+    setSavingWhop(false);
   }
 
   async function handleSync() {
@@ -295,6 +321,69 @@ export default function AdminPage() {
                     No GHL-linked clients yet. Run a sync first.
                   </p>
                 )}
+              </div>
+            </div>
+
+            {/* Whop Billing */}
+            <div className="card p-6">
+              <h2 className="font-semibold mb-1 flex items-center gap-2"><CreditCard size={16} style={{ color: 'var(--accent)' }} /> Whop Billing</h2>
+              <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                Connects Whop payments to client records by matching the payment's customer email to a client's Contact Email.
+                On every successful payment, that client's Retainer and Rebilling Date update automatically.
+              </p>
+
+              <form onSubmit={handleSaveWhop} className="space-y-3 mb-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Whop API Key</label>
+                    <input
+                      className="input mt-1"
+                      type="password"
+                      value={whopApiKeyInput}
+                      onChange={(e) => setWhopApiKeyInput(e.target.value)}
+                      placeholder={whopApiKey ? 'Enter new key to replace current one' : 'Paste your Whop API key…'}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Webhook Signing Secret</label>
+                    <input
+                      className="input mt-1"
+                      type="password"
+                      value={whopSecretInput}
+                      onChange={(e) => setWhopSecretInput(e.target.value)}
+                      placeholder={whopSecret ? 'Enter new secret to replace current one' : 'whsec_…'}
+                    />
+                  </div>
+                </div>
+                <button type="submit" className="btn-primary text-sm" disabled={savingWhop}>
+                  {savingWhop ? 'Saving…' : 'Save'}
+                </button>
+                <div className="flex gap-4 text-xs">
+                  {whopApiKey && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> API key configured</p>}
+                  {whopSecret && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Webhook secret configured</p>}
+                </div>
+              </form>
+
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-muted)' }}>
+                  Webhook URL — paste this into Whop → Developer → Webhooks → Create Webhook, subscribed to "payment.succeeded"
+                </label>
+                <div className="flex gap-2 items-center">
+                  <code className="flex-1 text-xs px-3 py-2 rounded-lg font-mono" style={{ background: 'var(--surface-2)', color: 'var(--accent)', border: '1px solid var(--border)' }}>
+                    {typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/whop
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/whop`);
+                      setCopiedWhop(true); setTimeout(() => setCopiedWhop(false), 2000);
+                    }}
+                    className="btn-ghost text-sm flex items-center gap-1.5">
+                    <Copy size={13} /> {copiedWhop ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                  Whop shows the webhook signing secret when you create the webhook — paste it above. Matching relies on each client's Contact Email (Edit Client) being the same email they pay with in Whop.
+                </p>
               </div>
             </div>
 
