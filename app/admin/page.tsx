@@ -50,6 +50,8 @@ export default function AdminPage() {
   const [whopSecret, setWhopSecret] = useState('');
   const [whopSecretInput, setWhopSecretInput] = useState('');
   const [savingWhop, setSavingWhop] = useState(false);
+  const [syncingWhop, setSyncingWhop] = useState(false);
+  const [whopSyncResult, setWhopSyncResult] = useState<{ membershipsChecked: number; updated: { client: string; rebilling_date: string }[]; clientsWithNoWhopMatch: string[] } | { error: string } | null>(null);
   const [copiedWhop, setCopiedWhop] = useState(false);
 
   const user = session?.user as any;
@@ -120,6 +122,15 @@ export default function AdminPage() {
     setWhopSecretInput('');
     await loadData();
     setSavingWhop(false);
+  }
+
+  async function handleWhopSync() {
+    setSyncingWhop(true);
+    setWhopSyncResult(null);
+    const res = await fetch('/api/admin/whop-sync', { method: 'POST' });
+    const data = await res.json();
+    setWhopSyncResult(res.ok ? data : { error: data.error ?? 'Sync failed' });
+    setSyncingWhop(false);
   }
 
   async function handleSync() {
@@ -384,6 +395,45 @@ export default function AdminPage() {
                 <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
                   Whop shows the webhook signing secret when you create the webhook — paste it above. Matching relies on each client's Contact Email (Edit Client) being the same email they pay with in Whop.
                 </p>
+              </div>
+
+              <hr className="my-4" style={{ borderColor: 'var(--border)' }} />
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-medium">Sync Rebilling Dates Now</p>
+                  <button onClick={handleWhopSync} disabled={syncingWhop || !whopApiKey} className="btn-primary text-sm flex items-center gap-2">
+                    <RefreshCw size={13} className={syncingWhop ? 'animate-spin' : ''} />
+                    {syncingWhop ? 'Syncing…' : 'Sync from Whop'}
+                  </button>
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Pulls every Whop membership right now and updates each matched client's Rebilling Date — no webhook needed for this one-time catch-up.
+                </p>
+
+                {whopSyncResult && 'error' in whopSyncResult && (
+                  <p className="text-xs mt-3 flex items-center gap-1" style={{ color: 'var(--red)' }}><AlertCircle size={12} /> {whopSyncResult.error}</p>
+                )}
+                {whopSyncResult && 'updated' in whopSyncResult && (
+                  <div className="mt-3 p-3 rounded-lg text-xs space-y-2" style={{ background: 'var(--surface-2)' }}>
+                    <p style={{ color: 'var(--text-muted)' }}>{whopSyncResult.membershipsChecked} Whop membership(s) checked</p>
+                    {whopSyncResult.updated.length > 0 ? (
+                      <ul className="space-y-1">
+                        {whopSyncResult.updated.map((u, i) => (
+                          <li key={i} className="flex items-center gap-1" style={{ color: 'var(--green)' }}>
+                            <CheckCircle size={11} /> {u.client} → rebilling {new Date(u.rebilling_date + 'T00:00:00').toLocaleDateString()}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p style={{ color: 'var(--text-muted)' }}>No rebilling dates changed.</p>
+                    )}
+                    {whopSyncResult.clientsWithNoWhopMatch.length > 0 && (
+                      <p style={{ color: 'var(--yellow)' }}>
+                        No Whop membership found for: {whopSyncResult.clientsWithNoWhopMatch.join(', ')} — check their Contact Email matches what they pay with in Whop.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

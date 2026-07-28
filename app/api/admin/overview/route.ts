@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { getLiveClientStats } from '@/lib/clientStats';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -31,9 +32,25 @@ export async function GET() {
     WHERE c.onboard_status != 'pending'
     GROUP BY c.id
     ORDER BY c.start_date DESC
-  `).all();
+  `).all() as any[];
 
-  return NextResponse.json(clients);
+  // Pull live GHL leads/in-home counts + live ad spend (Meta > manual > estimate)
+  // for every client in parallel, instead of relying on stale per-client cache —
+  // this is the same priority logic the individual client dashboard uses.
+  const agencyGhlKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
+  const enriched = await Promise.all(clients.map(async (c) => {
+    try {
+      const live = await getLiveClientStats(c, agencyGhlKey);
+      if (live.leads !== c.cached_leads || live.inhome !== c.cached_inhome) {
+        db.prepare('UPDATE clients SET cached_leads = ?, cached_inhome = ? WHERE id = ?').run(live.leads, live.inhome, c.id);
+      }
+      return { ...c, cached_leads: live.leads, cached_inhome: live.inhome, total_ad_spend: live.totalAdSpend, meta_connected: live.metaConnected };
+    } catch {
+      return { ...c, total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client), meta_connected: false };
+    }
+  }));
+
+  return NextResponse.json(enriched);
 }
 
 export async function PATCH(req: Request) {

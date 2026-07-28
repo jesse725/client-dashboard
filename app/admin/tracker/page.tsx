@@ -33,6 +33,8 @@ interface ClientRow {
   days_as_client: number;
   total_payments_received: number;
   latest_sentiment: string | null;
+  total_ad_spend: number;
+  meta_connected: boolean;
 }
 
 // GHL Client Success pipeline stage → kanban column mapping
@@ -98,7 +100,7 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
   c: ClientRow; onUpdate: (id: number, patch: Partial<ClientRow>) => void;
   ghlStage?: string; onClick: () => void;
 }) {
-  const totalAdSpend = c.ad_spend || (c.daily_ad_spend * c.days_as_client);
+  const totalAdSpend = c.total_ad_spend ?? (c.ad_spend || (c.daily_ad_spend * c.days_as_client));
   const cpl = c.cached_leads > 0 ? totalAdSpend / c.cached_leads : 0;
   const sentiment = c.latest_sentiment ? SENTIMENT_CONFIG[c.latest_sentiment] : null;
   const daysUntilBilling = c.rebilling_date
@@ -186,10 +188,11 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
   return (
     <div className="space-y-4">
       {/* Summary bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
           { label: 'Active Clients',   value: String(active.length),                                          color: 'var(--accent)' },
           { label: 'MRR',              value: fmt$(active.reduce((s, c) => s + (c.retainer_price || 0), 0)), color: 'var(--green)' },
+          { label: 'Total Ad Spend',   value: fmt$(active.reduce((s, c) => s + (c.total_ad_spend || 0), 0)), color: 'var(--yellow)' },
           { label: 'Total Leads',      value: String(active.reduce((s, c) => s + c.cached_leads, 0)),        color: 'var(--yellow)' },
           { label: 'Jobs Closed',      value: String(active.reduce((s, c) => s + c.closed_deals, 0)),        color: 'var(--green)' },
           { label: 'At Risk',          value: String(clients.filter(c => c.client_status === 'At Risk').length), color: '#f59e0b' },
@@ -207,14 +210,14 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
           <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                {['Client', 'Stage', 'Tenure', 'Retainer', 'CPL', 'Leads', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
+                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Leads', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {clients.map((c, i) => {
-                const totalAdSpend = c.ad_spend || (c.daily_ad_spend * c.days_as_client);
+                const totalAdSpend = c.total_ad_spend ?? (c.ad_spend || (c.daily_ad_spend * c.days_as_client));
                 const cpl = c.cached_leads > 0 ? totalAdSpend / c.cached_leads : 0;
                 const cpih = c.cached_inhome > 0 ? totalAdSpend / c.cached_inhome : 0;
                 const closeRate = c.total_quotes > 0 ? (c.closed_deals / c.total_quotes) * 100 : 0;
@@ -246,6 +249,10 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                     </td>
                     <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>{tenure(c.days_as_client)}</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(c.retainer_price || 0)}/mo</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--yellow)' }}>
+                      {totalAdSpend > 0 ? fmt$(totalAdSpend) : '—'}
+                      {c.meta_connected && <span className="ml-1 text-xs" style={{ color: 'var(--green)' }} title="Live from Meta">●</span>}
+                    </td>
                     <td className="px-4 py-3 font-semibold" style={{ color: cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 150 ? 'var(--red)' : cpl > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {cpl > 0 ? `$${Math.round(cpl)}` : '—'}
                     </td>

@@ -46,3 +46,33 @@ export async function fetchWhopMembership(apiKey: string, membershipId: string):
     email: data.user?.email ?? null,
   };
 }
+
+export interface WhopMembershipListItem {
+  id: string;
+  email: string | null;
+  status: string;
+}
+
+export async function listWhopMemberships(apiKey: string): Promise<WhopMembershipListItem[]> {
+  const results: WhopMembershipListItem[] = [];
+  let after: string | undefined;
+
+  while (true) {
+    const url = new URL(`${WHOP_API_BASE}/memberships`);
+    url.searchParams.set('first', '100');
+    if (after) url.searchParams.set('after', after);
+
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`);
+    const json = await res.json();
+
+    for (const m of json.data ?? []) {
+      results.push({ id: m.id, email: m.user?.email ?? null, status: m.status });
+    }
+
+    if (!json.page_info?.has_next_page) break;
+    after = json.page_info.end_cursor;
+  }
+
+  return results;
+}

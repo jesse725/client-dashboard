@@ -26,6 +26,8 @@ export interface Client {
   date_billed: string | null;
   rebilling_date: string | null;
   share_token: string | null;
+  cached_leads: number;
+  cached_inhome: number;
   created_at: string;
 }
 
