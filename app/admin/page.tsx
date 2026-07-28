@@ -49,6 +49,7 @@ export default function AdminPage() {
   const [whopApiKeyInput, setWhopApiKeyInput] = useState('');
   const [whopSecret, setWhopSecret] = useState('');
   const [whopSecretInput, setWhopSecretInput] = useState('');
+  const [whopCompanyId, setWhopCompanyId] = useState('');
   const [savingWhop, setSavingWhop] = useState(false);
   const [syncingWhop, setSyncingWhop] = useState(false);
   const [whopSyncResult, setWhopSyncResult] = useState<{ membershipsChecked: number; updated: { client: string; rebilling_date: string }[]; clientsWithNoWhopMatch: string[] } | { error: string } | null>(null);
@@ -80,6 +81,7 @@ export default function AdminPage() {
     setSyncInterval(settings.sync_interval_minutes ?? '30');
     setWhopApiKey(settings.whop_api_key ?? '');
     setWhopSecret(settings.whop_webhook_secret ?? '');
+    setWhopCompanyId(settings.whop_company_id ?? '');
   }, [status]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -116,6 +118,7 @@ export default function AdminPage() {
       body: JSON.stringify({
         whop_api_key: whopApiKeyInput || whopApiKey,
         whop_webhook_secret: whopSecretInput || whopSecret,
+        whop_company_id: whopCompanyId,
       }),
     });
     setWhopApiKeyInput('');
@@ -365,6 +368,17 @@ export default function AdminPage() {
                       placeholder={whopSecret ? 'Enter new secret to replace current one' : 'whsec_…'}
                     />
                   </div>
+                  <div className="col-span-2">
+                    <label className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Company ID <span style={{ opacity: 0.7 }}>(usually auto-detected — only fill in if "Sync from Whop" asks for it. Find it in your Whop dashboard URL: whop.com/dashboard/biz_…)</span>
+                    </label>
+                    <input
+                      className="input mt-1"
+                      value={whopCompanyId}
+                      onChange={(e) => setWhopCompanyId(e.target.value)}
+                      placeholder="biz_xxxxxxxxxxxx"
+                    />
+                  </div>
                 </div>
                 <button type="submit" className="btn-primary text-sm" disabled={savingWhop}>
                   {savingWhop ? 'Saving…' : 'Save'}
@@ -372,6 +386,7 @@ export default function AdminPage() {
                 <div className="flex gap-4 text-xs">
                   {whopApiKey && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> API key configured</p>}
                   {whopSecret && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Webhook secret configured</p>}
+                  {whopCompanyId && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Company ID set</p>}
                 </div>
               </form>
 

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { listWhopMemberships, fetchWhopMembership } from '@/lib/whop';
+import { listWhopMemberships, fetchWhopMembership, fetchWhopCompanyId } from '@/lib/whop';
 
 export async function POST() {
   const session = await getServerSession(authOptions);
@@ -18,6 +18,18 @@ export async function POST() {
     return NextResponse.json({ error: 'Whop API key is not configured — add it in Admin Settings first.' }, { status: 400 });
   }
 
+  let companyId = (db.prepare("SELECT value FROM settings WHERE key = 'whop_company_id'").get() as any)?.value ?? '';
+  if (!companyId) {
+    try {
+      companyId = await fetchWhopCompanyId(apiKey);
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('whop_company_id', ?)").run(companyId);
+    } catch (e: any) {
+      return NextResponse.json({
+        error: `Couldn't auto-detect your Whop Company ID (${e.message}). Add it manually in Admin Settings → Whop Billing → Company ID — find it in your Whop dashboard URL, it looks like "biz_xxxxxxxxxxxx".`,
+      }, { status: 400 });
+    }
+  }
+
   const clients = db.prepare(
     "SELECT id, name, contact_email, rebilling_date FROM clients WHERE contact_email IS NOT NULL AND contact_email != '' AND onboard_status != 'pending'"
   ).all() as { id: number; name: string; contact_email: string; rebilling_date: string | null }[];
@@ -25,7 +37,7 @@ export async function POST() {
 
   let memberships;
   try {
-    memberships = await listWhopMemberships(apiKey);
+    memberships = await listWhopMemberships(apiKey, companyId);
   } catch (e: any) {
     return NextResponse.json({ error: `Failed to list Whop memberships: ${e.message}` }, { status: 502 });
   }

@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 
-const ALLOWED_KEYS = ['ghl_agency_key', 'sync_interval_minutes', 'last_sync', 'whop_api_key', 'whop_webhook_secret'];
+const ALLOWED_KEYS = ['ghl_agency_key', 'sync_interval_minutes', 'last_sync', 'whop_api_key', 'whop_webhook_secret', 'whop_company_id'];
 const MASKED_KEYS = ['ghl_agency_key', 'whop_api_key', 'whop_webhook_secret'];
 
 export async function GET() {

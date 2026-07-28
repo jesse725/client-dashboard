@@ -53,12 +53,25 @@ export interface WhopMembershipListItem {
   status: string;
 }
 
-export async function listWhopMemberships(apiKey: string): Promise<WhopMembershipListItem[]> {
+// The /memberships list endpoint requires company_id (format "biz_xxxx").
+// Try to auto-discover it from the API key itself first.
+export async function fetchWhopCompanyId(apiKey: string): Promise<string> {
+  const res = await fetch(`${WHOP_API_BASE}/accounts/me`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  if (!data.id) throw new Error('No company id returned from /accounts/me');
+  return data.id as string;
+}
+
+export async function listWhopMemberships(apiKey: string, companyId: string): Promise<WhopMembershipListItem[]> {
   const results: WhopMembershipListItem[] = [];
   let after: string | undefined;
 
   while (true) {
     const url = new URL(`${WHOP_API_BASE}/memberships`);
+    url.searchParams.set('company_id', companyId);
     url.searchParams.set('first', '100');
     if (after) url.searchParams.set('after', after);
 
