@@ -148,6 +148,41 @@ export async function fetchGHLPipelineStats(
   };
 }
 
+export interface GHLOpportunityRaw {
+  id: string;
+  createdAt: string;
+  attributions?: { utmAdId?: string; adSource?: string }[];
+}
+
+// Raw opportunities (with UTM attribution) for a pipeline — used to attribute
+// leads back to the specific Meta ad that generated them via utmAdId.
+export async function fetchGHLOpportunitiesRaw(
+  apiKey: string,
+  locationId: string,
+  pipelineId: string
+): Promise<GHLOpportunityRaw[]> {
+  const headers = v2Headers(apiKey);
+  let allOpps: GHLOpportunityRaw[] = [];
+  const limit = 100;
+  let startAfter: string | undefined;
+  let startAfterId: string | undefined;
+
+  while (true) {
+    let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&limit=${limit}`;
+    if (startAfter) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) break;
+    const data = await res.json();
+    const opps: GHLOpportunityRaw[] = data.opportunities ?? [];
+    allOpps = allOpps.concat(opps);
+    if (opps.length < limit || !data.meta?.nextPageUrl) break;
+    startAfter = data.meta.startAfter;
+    startAfterId = data.meta.startAfterId;
+  }
+
+  return allOpps;
+}
+
 // ── Key resolver ─────────────────────────────────────────────────────────────
 // If client has their own key use it; otherwise fall back to agency key.
 export function resolveApiKey(locationApiKey: string | null, agencyApiKey: string): string {

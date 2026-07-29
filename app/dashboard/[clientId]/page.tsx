@@ -9,7 +9,7 @@ import {
   ArrowLeft, RefreshCw, ExternalLink, FileText,
   TrendingUp, Users, PhoneCall, Home, XCircle, DollarSign,
   Plus, CheckCircle, Clock, Settings, Target, BarChart2, Zap,
-  MousePointerClick, Eye, Activity, AlertTriangle, Pencil, Trash2,
+  MousePointerClick, Eye, Activity, AlertTriangle, Pencil, Trash2, Award,
 } from 'lucide-react';
 import QuoteModal from '@/components/QuoteModal';
 import EditClientModal from '@/components/EditClientModal';
@@ -120,6 +120,10 @@ export default function ClientDashboardPage() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [issueForm, setIssueForm] = useState<{ id?: number; date: string; issue: string; solution: string; status: 'open' | 'resolved' } | null>(null);
 
+  type AdPerfRow = { adId: string; adName: string; spend: number; leads: number; cpl: number | null; impressions: number; clicks: number };
+  const [adPerformance, setAdPerformance] = useState<AdPerfRow[]>([]);
+  const [loadingAdPerf, setLoadingAdPerf] = useState(false);
+
   const user = session?.user as any;
   const isAdmin = user?.role === 'admin';
 
@@ -154,8 +158,19 @@ export default function ClientDashboardPage() {
     setSyncing(false);
   }, [clientId]);
 
+  const loadAdPerformance = useCallback(async () => {
+    setLoadingAdPerf(true);
+    const res = await fetch(`/api/clients/${clientId}/ad-performance`);
+    if (res.ok) {
+      const data = await res.json();
+      setAdPerformance(data.ads ?? []);
+    }
+    setLoadingAdPerf(false);
+  }, [clientId]);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (client) syncGHL(); }, [client?.id, syncGHL]);
+  useEffect(() => { if (client) loadAdPerformance(); }, [client?.id, loadAdPerformance]);
   useEffect(() => {
     const interval = setInterval(syncGHL, 60 * 60 * 1000);
     return () => clearInterval(interval);
@@ -374,6 +389,53 @@ export default function ClientDashboardPage() {
                 </div>
               )}
             </div>
+          </section>
+        )}
+
+        {/* ─── SECTION 1b: Ad Creative Performance ──────────────────────── */}
+        {metaStats && (isAdmin || adPerformance.length > 0) && (
+          <section>
+            <SectionHeader icon={<Award size={15} />} title="Ad Creative Performance"
+              badge="Ranked by CPL" />
+            {loadingAdPerf ? (
+              <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading ad performance…</div>
+            ) : adPerformance.length === 0 ? (
+              <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                No per-ad spend in this window yet.
+              </div>
+            ) : (
+              <div className="card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+                        {['Ad', 'Spend', 'Leads', 'CPL', 'Clicks'].map(h => (
+                          <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adPerformance.map((a, i) => (
+                        <tr key={a.adId} style={{ borderBottom: i < adPerformance.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                          <td className="px-4 py-2.5 font-medium max-w-xs truncate" title={a.adName}>{a.adName}</td>
+                          <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>${Math.round(a.spend).toLocaleString()}</td>
+                          <td className="px-4 py-2.5 text-center">{a.leads}</td>
+                          <td className="px-4 py-2.5 font-semibold" style={{
+                            color: a.cpl == null ? 'var(--red)' : a.cpl <= 50 ? 'var(--green)' : a.cpl <= 150 ? 'var(--yellow)' : 'var(--red)',
+                          }}>
+                            {a.cpl != null ? `$${Math.round(a.cpl)}` : 'No leads yet'}
+                          </td>
+                          <td className="px-4 py-2.5 text-center" style={{ color: 'var(--text-muted)' }}>{a.clicks}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+                  Sorted best CPL → worst. Ads spending with no leads sort to the bottom — good candidates to pause or swap creative.
+                </div>
+              </div>
+            )}
           </section>
         )}
 
