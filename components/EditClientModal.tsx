@@ -129,6 +129,24 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
             </div>
           </div>
 
+          {/* ── Contact ── */}
+          <hr style={{ borderColor: 'var(--border)' }} />
+          <SectionHeader>Contact (used for client login &amp; Whop billing match)</SectionHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Contact Name</Label>
+              <input className="input" value={form.contact_name} onChange={(e) => set('contact_name', e.target.value)} />
+            </div>
+            <div>
+              <Label>Contact Email</Label>
+              <input className="input" type="email" value={form.contact_email} onChange={(e) => set('contact_email', e.target.value)} />
+            </div>
+            <div>
+              <Label>Contact Phone</Label>
+              <input className="input" value={form.contact_phone} onChange={(e) => set('contact_phone', e.target.value)} />
+            </div>
+          </div>
+
           {/* ── Billing ── */}
           <hr style={{ borderColor: 'var(--border)' }} />
           <SectionHeader>Billing</SectionHeader>
