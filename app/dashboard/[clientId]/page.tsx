@@ -36,6 +36,19 @@ function SectionHeader({ icon, title, badge, action }: { icon: React.ReactNode; 
   );
 }
 
+function daysSince(dateStr: string): number {
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+}
+
+function fmtLastLead(dateStr: string | null): string {
+  if (!dateStr) return 'Never';
+  const days = daysSince(dateStr);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 14) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
+
 function StatCard({ label, value, sub, color, icon }: {
   label: string; value: string; sub?: string; color?: string; icon?: React.ReactNode;
 }) {
@@ -120,7 +133,7 @@ export default function ClientDashboardPage() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [issueForm, setIssueForm] = useState<{ id?: number; date: string; issue: string; solution: string; status: 'open' | 'resolved' } | null>(null);
 
-  type AdPerfRow = { adId: string; adName: string; spend: number; leads: number; cpl: number | null; impressions: number; clicks: number };
+  type AdPerfRow = { adId: string; adName: string; spend: number; leads: number; cpl: number | null; impressions: number; clicks: number; lastLeadAt: string | null };
   const [adPerformance, setAdPerformance] = useState<AdPerfRow[]>([]);
   const [loadingAdPerf, setLoadingAdPerf] = useState(false);
 
@@ -409,7 +422,7 @@ export default function ClientDashboardPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                        {['Ad', 'Spend', 'Leads', 'CPL', 'Clicks'].map(h => (
+                        {['Ad', 'Spend', 'Leads', 'CPL', 'Last Lead', 'Clicks'].map(h => (
                           <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{h}</th>
                         ))}
                       </tr>
@@ -425,6 +438,11 @@ export default function ClientDashboardPage() {
                           }}>
                             {a.cpl != null ? `$${Math.round(a.cpl)}` : 'No leads yet'}
                           </td>
+                          <td className="px-4 py-2.5 font-medium" style={{
+                            color: !a.lastLeadAt ? 'var(--red)' : daysSince(a.lastLeadAt) >= 7 ? 'var(--red)' : daysSince(a.lastLeadAt) >= 3 ? 'var(--yellow)' : 'var(--green)',
+                          }}>
+                            {fmtLastLead(a.lastLeadAt)}
+                          </td>
                           <td className="px-4 py-2.5 text-center" style={{ color: 'var(--text-muted)' }}>{a.clicks}</td>
                         </tr>
                       ))}
@@ -432,7 +450,7 @@ export default function ClientDashboardPage() {
                   </table>
                 </div>
                 <div className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-                  Sorted best CPL → worst. Ads spending with no leads sort to the bottom — good candidates to pause or swap creative.
+                  Sorted best CPL → worst. Ads spending with no leads sort to the bottom. "Last Lead" in red (7+ days, or never) flags creative that's likely gone stale — good candidates to pause or swap.
                 </div>
               </div>
             )}

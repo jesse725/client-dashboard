@@ -14,6 +14,7 @@ export interface AdPerformanceRow {
   cpl: number | null; // null when this ad has 0 attributed leads
   impressions: number;
   clicks: number;
+  lastLeadAt: string | null; // ISO date of the most recent lead attributed to this ad
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -43,6 +44,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // Count leads per ad from GHL's UTM attribution (utmAdId), if this client's
     // pipeline is connected — otherwise we can only show spend, no CPL.
     const leadsByAdId = new Map<string, number>();
+    const lastLeadByAdId = new Map<string, string>();
     if (client.ghl_location_id && client.ghl_pipeline_id) {
       const agencyKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
       const apiKey = resolveApiKey(client.ghl_api_key, agencyKey);
@@ -50,7 +52,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       for (const o of opps) {
         if (new Date(o.createdAt) < new Date(since)) continue;
         const adId = o.attributions?.find(a => a.utmAdId)?.utmAdId;
-        if (adId) leadsByAdId.set(adId, (leadsByAdId.get(adId) ?? 0) + 1);
+        if (!adId) continue;
+        leadsByAdId.set(adId, (leadsByAdId.get(adId) ?? 0) + 1);
+        const prevLatest = lastLeadByAdId.get(adId);
+        if (!prevLatest || new Date(o.createdAt) > new Date(prevLatest)) {
+          lastLeadByAdId.set(adId, o.createdAt);
+        }
       }
     }
 
@@ -66,6 +73,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           cpl: leads > 0 ? a.spend / leads : null,
           impressions: a.impressions,
           clicks: a.clicks,
+          lastLeadAt: lastLeadByAdId.get(a.adId) ?? null,
         };
       })
       // Best CPL first; ads with no leads yet sort to the bottom (they're the
