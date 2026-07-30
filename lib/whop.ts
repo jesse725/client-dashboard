@@ -37,7 +37,7 @@ export interface WhopMembership {
 
 export async function fetchWhopMembership(apiKey: string, membershipId: string): Promise<WhopMembership> {
   const res = await fetch(`${WHOP_API_BASE}/memberships/${membershipId}`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${apiKey.trim()}` },
   });
   if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -57,7 +57,7 @@ export interface WhopMembershipListItem {
 // Try to auto-discover it from the API key itself first.
 export async function fetchWhopCompanyId(apiKey: string): Promise<string> {
   const res = await fetch(`${WHOP_API_BASE}/accounts/me`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${apiKey.trim()}` },
   });
   if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -68,14 +68,16 @@ export async function fetchWhopCompanyId(apiKey: string): Promise<string> {
 export async function listWhopMemberships(apiKey: string, companyId: string): Promise<WhopMembershipListItem[]> {
   const results: WhopMembershipListItem[] = [];
   let after: string | undefined;
+  const trimmedKey = apiKey.trim();
+  const trimmedCompanyId = companyId.trim();
 
   while (true) {
     const url = new URL(`${WHOP_API_BASE}/memberships`);
-    url.searchParams.set('company_id', companyId);
+    url.searchParams.set('company_id', trimmedCompanyId);
     url.searchParams.set('first', '100');
     if (after) url.searchParams.set('after', after);
 
-    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${apiKey}` } });
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${trimmedKey}` } });
     if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`);
     const json = await res.json();
 

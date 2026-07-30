@@ -384,9 +384,9 @@ export default function AdminPage() {
                   {savingWhop ? 'Saving…' : 'Save'}
                 </button>
                 <div className="flex gap-4 text-xs">
-                  {whopApiKey && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> API key configured</p>}
-                  {whopSecret && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Webhook secret configured</p>}
-                  {whopCompanyId && <p className="flex items-center gap-1" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Company ID set</p>}
+                  {whopApiKey && <p className="flex items-center gap-1 font-mono" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Key: {whopApiKey}</p>}
+                  {whopSecret && <p className="flex items-center gap-1 font-mono" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Secret: {whopSecret}</p>}
+                  {whopCompanyId && <p className="flex items-center gap-1 font-mono" style={{ color: 'var(--green)' }}><CheckCircle size={12} /> Company ID: {whopCompanyId}</p>}
                 </div>
               </form>
 
