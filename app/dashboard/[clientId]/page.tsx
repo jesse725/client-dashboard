@@ -9,7 +9,7 @@ import {
   ArrowLeft, RefreshCw, ExternalLink, FileText,
   TrendingUp, Users, PhoneCall, Home, XCircle, DollarSign,
   Plus, CheckCircle, Clock, Settings, Target, BarChart2, Zap,
-  MousePointerClick, Eye, Activity, AlertTriangle, Pencil, Trash2, Award,
+  MousePointerClick, Eye, Activity, AlertTriangle, Pencil, Trash2, Award, GraduationCap,
 } from 'lucide-react';
 import QuoteModal from '@/components/QuoteModal';
 import EditClientModal from '@/components/EditClientModal';
@@ -252,6 +252,11 @@ export default function ClientDashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <a href="https://young-steed-8fc.notion.site/Merova-Mini-Course-390210a0a30381b98a63eeac6c325f12"
+            target="_blank" rel="noopener noreferrer"
+            className="btn-ghost text-sm flex items-center gap-2">
+            <GraduationCap size={14} /> Mini Course
+          </a>
           {client.contract_url && (
             <a href={client.contract_url} target="_blank" rel="noopener noreferrer"
               className="btn-ghost text-sm flex items-center gap-2">

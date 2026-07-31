@@ -15,6 +15,7 @@ interface ClientRow {
   id: number;
   name: string;
   start_date: string;
+  date_launched: string | null;
   retainer_price: number;
   daily_ad_spend: number;
   ad_spend: number;
@@ -35,6 +36,8 @@ interface ClientRow {
   latest_sentiment: string | null;
   total_ad_spend: number;
   meta_connected: boolean;
+  best_ad_cpl: number | null;
+  last_lead_at: string | null;
 }
 
 // GHL Client Success pipeline stage → kanban column mapping
@@ -82,6 +85,21 @@ function tenure(days: number) {
   if (days < 365) return `${Math.floor(days / 30)}mo`;
   const y = Math.floor(days / 365), m = Math.floor((days % 365) / 30);
   return m > 0 ? `${y}y ${m}mo` : `${y}y`;
+}
+// Tenure display is measured from ads-launch date (falls back to contract
+// start date if the client hasn't launched yet) — reflects how long the
+// campaign has actually been live, not just how long the contract's existed.
+function daysSinceLaunch(c: ClientRow): number {
+  const base = c.date_launched || c.start_date;
+  return Math.max(0, Math.floor((Date.now() - new Date(base).getTime()) / 86400000));
+}
+function fmtLastLead(dateStr: string | null): string {
+  if (!dateStr) return 'Never';
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 14) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
 }
 function autoStage(c: ClientRow): string {
   if (c.client_status === 'At Risk' || c.client_status === 'Churned') return c.client_status;
@@ -132,7 +150,7 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
 
       <div className="flex flex-wrap gap-1.5">
         <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-          {tenure(c.days_as_client)}
+          {tenure(daysSinceLaunch(c))}
         </span>
         {ghlStage && (
           <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(108,99,255,0.12)', color: 'var(--accent)' }}>
@@ -210,7 +228,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
           <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Leads', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
+                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Best Ad CPL', 'Last Lead', 'Leads', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -247,7 +265,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                         {c.client_status || autoStage(c)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>{tenure(c.days_as_client)}</td>
+                    <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>{tenure(daysSinceLaunch(c))}</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(c.retainer_price || 0)}/mo</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--yellow)' }}>
                       {totalAdSpend > 0 ? fmt$(totalAdSpend) : '—'}
@@ -255,6 +273,17 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                     </td>
                     <td className="px-4 py-3 font-semibold" style={{ color: cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 150 ? 'var(--red)' : cpl > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {cpl > 0 ? `$${Math.round(cpl)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: c.best_ad_cpl == null ? 'var(--text-muted)' : c.best_ad_cpl <= 50 ? 'var(--green)' : c.best_ad_cpl <= 150 ? 'var(--yellow)' : 'var(--red)' }}>
+                      {c.best_ad_cpl != null ? `$${Math.round(c.best_ad_cpl)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap" style={{
+                      color: !c.last_lead_at ? 'var(--red)'
+                        : Math.floor((Date.now() - new Date(c.last_lead_at).getTime()) / 86400000) <= 3 ? 'var(--green)'
+                        : Math.floor((Date.now() - new Date(c.last_lead_at).getTime()) / 86400000) <= 7 ? 'var(--yellow)'
+                        : 'var(--red)',
+                    }}>
+                      {fmtLastLead(c.last_lead_at)}
                     </td>
                     <td className="px-4 py-3 text-center">{c.cached_leads > 0 ? c.cached_leads : '—'}</td>
                     <td className="px-4 py-3 text-center">{c.cached_inhome > 0 ? c.cached_inhome : '—'}</td>
@@ -432,7 +461,7 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
                     <td className="px-4 py-3 font-semibold" style={{ color: isChurned ? 'var(--text-muted)' : 'var(--green)' }}>
                       {isChurned ? '—' : fmt$(c.retainer_price || 0) + '/mo'}
                     </td>
-                    <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{tenure(c.days_as_client)}</td>
+                    <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{tenure(daysSinceLaunch(c))}</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(ltv)}</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--green)' }}>
                       {c.revenue_closed > 0 ? fmt$(c.revenue_closed) : '—'}
@@ -463,7 +492,7 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
               <div key={c.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
                   <p className="font-medium">{c.name}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Was paying {fmt$(c.retainer_price || 0)}/mo · {tenure(c.days_as_client)} tenure</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Was paying {fmt$(c.retainer_price || 0)}/mo · {tenure(daysSinceLaunch(c))} tenure</p>
                 </div>
                 <div className="text-right">
                   <p className="font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(c.total_payments_received || 0)} LTV</p>
@@ -662,7 +691,7 @@ export default function TrackerPage() {
                 <div>
                   <p className="font-semibold">{selectedClient.name}</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {tenure(selectedClient.days_as_client)} · {getEffectiveStage(selectedClient)}
+                    {tenure(daysSinceLaunch(selectedClient))} · {getEffectiveStage(selectedClient)}
                     {selectedClient.latest_sentiment && ` · ${SENTIMENT_CONFIG[selectedClient.latest_sentiment]?.label}`}
                   </p>
                 </div>

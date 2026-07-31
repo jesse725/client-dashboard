@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { getLiveClientStats } from '@/lib/clientStats';
+import { getClientAdPerformance } from '@/lib/adPerformance';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -39,15 +40,22 @@ export async function GET() {
   // this is the same priority logic the individual client dashboard uses.
   const agencyGhlKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
   const enriched = await Promise.all(clients.map(async (c) => {
+    let row = { ...c, total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client), meta_connected: false, best_ad_cpl: null as number | null, last_lead_at: null as string | null };
     try {
       const live = await getLiveClientStats(c, agencyGhlKey);
       if (live.leads !== c.cached_leads || live.inhome !== c.cached_inhome) {
         db.prepare('UPDATE clients SET cached_leads = ?, cached_inhome = ? WHERE id = ?').run(live.leads, live.inhome, c.id);
       }
-      return { ...c, cached_leads: live.leads, cached_inhome: live.inhome, total_ad_spend: live.totalAdSpend, meta_connected: live.metaConnected };
-    } catch {
-      return { ...c, total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client), meta_connected: false };
-    }
+      row = { ...row, cached_leads: live.leads, cached_inhome: live.inhome, total_ad_spend: live.totalAdSpend, meta_connected: live.metaConnected };
+    } catch { /* keep fallback total_ad_spend above */ }
+
+    try {
+      const perf = await getClientAdPerformance(c, agencyGhlKey);
+      row.best_ad_cpl = perf.bestCpl;
+      row.last_lead_at = perf.lastLeadAt;
+    } catch { /* leave best_ad_cpl/last_lead_at null */ }
+
+    return row;
   }));
 
   return NextResponse.json(enriched);
