@@ -42,36 +42,55 @@ export async function POST() {
     return NextResponse.json({ error: `Failed to list Whop memberships: ${e.message}` }, { status: 502 });
   }
 
+  // Only "active" (or "trialing") memberships represent a real, currently-paying
+  // subscription. A client can have several drafted/completed/canceled
+  // memberships in Whop's history — those aren't real and must not be allowed
+  // to overwrite a real rebilling_date.
+  const LIVE_STATUSES = new Set(['active', 'trialing']);
+  const liveMemberships = memberships.filter(m => LIVE_STATUSES.has(m.status));
+
   const updated: { client: string; rebilling_date: string }[] = [];
-  const unmatchedEmails: string[] = [];
+  const multipleActive: string[] = [];
 
-  for (const m of memberships) {
+  const byClient = new Map<string, typeof liveMemberships>();
+  for (const m of liveMemberships) {
     const email = m.email?.trim().toLowerCase();
-    if (!email) continue;
-    const client = clientsByEmail.get(email);
-    if (!client) { unmatchedEmails.push(email); continue; }
+    if (!email || !clientsByEmail.has(email)) continue;
+    byClient.set(email, [...(byClient.get(email) ?? []), m]);
+  }
 
-    try {
-      const detail = await fetchWhopMembership(apiKey, m.id);
-      if (detail.renewalPeriodEnd && detail.renewalPeriodEnd !== client.rebilling_date) {
-        db.prepare('UPDATE clients SET rebilling_date = ? WHERE id = ?').run(detail.renewalPeriodEnd, client.id);
-        updated.push({ client: client.name, rebilling_date: detail.renewalPeriodEnd });
+  for (const [email, ms] of byClient) {
+    const client = clientsByEmail.get(email)!;
+    if (ms.length > 1) multipleActive.push(client.name);
+
+    for (const m of ms) {
+      try {
+        const detail = await fetchWhopMembership(apiKey, m.id);
+        if (detail.renewalPeriodEnd && detail.renewalPeriodEnd !== client.rebilling_date) {
+          db.prepare('UPDATE clients SET rebilling_date = ? WHERE id = ?').run(detail.renewalPeriodEnd, client.id);
+          updated.push({ client: client.name, rebilling_date: detail.renewalPeriodEnd });
+        }
+      } catch {
+        // skip this membership, continue with the rest
       }
-    } catch {
-      // skip this membership, continue with the rest
     }
   }
 
-  const matchedEmails = new Set(memberships.map(m => m.email?.trim().toLowerCase()).filter(Boolean));
+  const matchedEmails = new Set(liveMemberships.map(m => m.email?.trim().toLowerCase()).filter(Boolean));
   const clientsWithNoWhopMatch = clients.filter(c => !matchedEmails.has(c.contact_email.trim().toLowerCase())).map(c => c.name);
+  const unmatchedEmails = [...new Set(liveMemberships.map(m => m.email?.trim().toLowerCase()).filter((e): e is string => !!e && !clientsByEmail.has(e)))];
 
   return NextResponse.json({
     ok: true,
     membershipsChecked: memberships.length,
+    liveMembershipsChecked: liveMemberships.length,
     updated,
     clientsWithNoWhopMatch,
     // Emails Whop has on file that didn't match any client's Contact Email —
     // useful for spotting a typo/different-email mismatch.
     unmatchedWhopEmails: [...new Set(unmatchedEmails)],
+    // Clients with more than one active/trialing membership — worth checking
+    // manually via /api/admin/whop-debug?email=... to confirm which is real.
+    multipleActiveMemberships: multipleActive,
   });
 }
