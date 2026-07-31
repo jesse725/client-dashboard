@@ -70,5 +70,8 @@ export async function POST() {
     membershipsChecked: memberships.length,
     updated,
     clientsWithNoWhopMatch,
+    // Emails Whop has on file that didn't match any client's Contact Email —
+    // useful for spotting a typo/different-email mismatch.
+    unmatchedWhopEmails: [...new Set(unmatchedEmails)],
   });
 }

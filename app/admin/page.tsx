@@ -52,7 +52,7 @@ export default function AdminPage() {
   const [whopCompanyId, setWhopCompanyId] = useState('');
   const [savingWhop, setSavingWhop] = useState(false);
   const [syncingWhop, setSyncingWhop] = useState(false);
-  const [whopSyncResult, setWhopSyncResult] = useState<{ membershipsChecked: number; updated: { client: string; rebilling_date: string }[]; clientsWithNoWhopMatch: string[] } | { error: string } | null>(null);
+  const [whopSyncResult, setWhopSyncResult] = useState<{ membershipsChecked: number; updated: { client: string; rebilling_date: string }[]; clientsWithNoWhopMatch: string[]; unmatchedWhopEmails: string[] } | { error: string } | null>(null);
   const [copiedWhop, setCopiedWhop] = useState(false);
 
   const user = session?.user as any;
@@ -445,6 +445,11 @@ export default function AdminPage() {
                     {whopSyncResult.clientsWithNoWhopMatch.length > 0 && (
                       <p style={{ color: 'var(--yellow)' }}>
                         No Whop membership found for: {whopSyncResult.clientsWithNoWhopMatch.join(', ')} — check their Contact Email matches what they pay with in Whop.
+                      </p>
+                    )}
+                    {whopSyncResult.unmatchedWhopEmails?.length > 0 && (
+                      <p style={{ color: 'var(--text-muted)' }}>
+                        Whop has these emails on file that don't match any client: {whopSyncResult.unmatchedWhopEmails.join(', ')}
                       </p>
                     )}
                   </div>
