@@ -6,6 +6,8 @@ import { Client } from '@/types';
 export interface LiveClientStats {
   leads: number;
   inhome: number;
+  contacted: number;
+  phone: number;
   totalAdSpend: number;
   metaConnected: boolean;
 }
@@ -18,6 +20,8 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string): 
 
   let leads = 0;
   let inhome = 0;
+  let contacted = 0;
+  let phone = 0;
   if (client.ghl_location_id && client.ghl_pipeline_id) {
     try {
       const apiKey = resolveApiKey(client.ghl_api_key, agencyGhlKey);
@@ -30,6 +34,8 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string): 
       });
       leads = pipeline.leads ?? 0;
       inhome = pipeline.inhome ?? 0;
+      contacted = pipeline.contacted ?? 0;
+      phone = pipeline.phone ?? 0;
     } catch {
       // fall back to last cached counts below
     }
@@ -59,5 +65,5 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string): 
         ? client.ad_spend
         : (client.daily_ad_spend ?? 0) * daysTogether;
 
-  return { leads, inhome, totalAdSpend, metaConnected: metaSpend != null };
+  return { leads, inhome, contacted, phone, totalAdSpend, metaConnected: metaSpend != null };
 }

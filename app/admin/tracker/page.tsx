@@ -38,6 +38,7 @@ interface ClientRow {
   meta_connected: boolean;
   best_ad_cpl: number | null;
   last_lead_at: string | null;
+  contact_pct: number | null;
 }
 
 // GHL Client Success pipeline stage → kanban column mapping
@@ -228,7 +229,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
           <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Best Ad CPL', 'Last Lead', 'Leads', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
+                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Best Ad CPL', 'Last Lead', 'Leads', 'Contact %', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -286,6 +287,9 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                       {fmtLastLead(c.last_lead_at)}
                     </td>
                     <td className="px-4 py-3 text-center">{c.cached_leads > 0 ? c.cached_leads : '—'}</td>
+                    <td className="px-4 py-3 text-center font-semibold" style={{ color: c.contact_pct == null ? 'var(--text-muted)' : c.contact_pct >= 60 ? 'var(--green)' : c.contact_pct >= 30 ? 'var(--yellow)' : 'var(--red)' }}>
+                      {c.contact_pct != null ? `${Math.round(c.contact_pct)}%` : '—'}
+                    </td>
                     <td className="px-4 py-3 text-center">{c.cached_inhome > 0 ? c.cached_inhome : '—'}</td>
                     <td className="px-4 py-3 text-center font-semibold" style={{ color: cpih > 0 && cpih <= 150 ? 'var(--green)' : cpih > 400 ? 'var(--red)' : cpih > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {cpih > 0 ? `$${Math.round(cpih)}` : '—'}

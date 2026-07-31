@@ -291,12 +291,26 @@ export default function ClientDashboardPage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-            {client.start_date && (
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Partner Since</p>
-                <p className="font-semibold">{new Date(client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>{m.daysTogether} days together</p>
-              </div>
+            {isAdmin ? (
+              client.start_date && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Partner Since</p>
+                  <p className="font-semibold">{new Date(client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>{m.daysTogether} days together</p>
+                </div>
+              )
+            ) : (
+              (client.date_launched || client.start_date) && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Launched</p>
+                  <p className="font-semibold">
+                    {new Date(client.date_launched || client.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--accent)' }}>
+                    {Math.max(0, Math.floor((Date.now() - new Date(client.date_launched || client.start_date).getTime()) / 86400000))} days live
+                  </p>
+                </div>
+              )
             )}
 
             <div>
