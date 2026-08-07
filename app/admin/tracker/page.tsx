@@ -39,6 +39,7 @@ interface ClientRow {
   best_ad_cpl: number | null;
   last_lead_at: string | null;
   contact_pct: number | null;
+  appointments: number;
 }
 
 // GHL Client Success pipeline stage → kanban column mapping
@@ -229,7 +230,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
           <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Best Ad CPL', 'Last Lead', 'Leads', 'Contact %', 'In-Home', 'Cost/Home', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
+                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Best Ad CPL', 'Last Lead', 'Leads', 'Contact %', 'Appointments', 'Cost/Appointment', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -238,7 +239,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
               {clients.map((c, i) => {
                 const totalAdSpend = c.total_ad_spend ?? (c.ad_spend || (c.daily_ad_spend * c.days_as_client));
                 const cpl = c.cached_leads > 0 ? totalAdSpend / c.cached_leads : 0;
-                const cpih = c.cached_inhome > 0 ? totalAdSpend / c.cached_inhome : 0;
+                const cpAppt = c.appointments > 0 ? totalAdSpend / c.appointments : 0;
                 const closeRate = c.total_quotes > 0 ? (c.closed_deals / c.total_quotes) * 100 : 0;
                 const sentiment = c.latest_sentiment ? SENTIMENT_CONFIG[c.latest_sentiment] : null;
                 const stage = KANBAN_STAGES.find(s => s.key === c.client_status) ?? KANBAN_STAGES.find(s => s.key === autoStage(c));
@@ -290,9 +291,9 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                     <td className="px-4 py-3 text-center font-semibold" style={{ color: c.contact_pct == null ? 'var(--text-muted)' : c.contact_pct >= 60 ? 'var(--green)' : c.contact_pct >= 30 ? 'var(--yellow)' : 'var(--red)' }}>
                       {c.contact_pct != null ? `${Math.round(c.contact_pct)}%` : '—'}
                     </td>
-                    <td className="px-4 py-3 text-center">{c.cached_inhome > 0 ? c.cached_inhome : '—'}</td>
-                    <td className="px-4 py-3 text-center font-semibold" style={{ color: cpih > 0 && cpih <= 150 ? 'var(--green)' : cpih > 400 ? 'var(--red)' : cpih > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
-                      {cpih > 0 ? `$${Math.round(cpih)}` : '—'}
+                    <td className="px-4 py-3 text-center">{c.appointments > 0 ? c.appointments : '—'}</td>
+                    <td className="px-4 py-3 text-center font-semibold" style={{ color: cpAppt > 0 && cpAppt <= 150 ? 'var(--green)' : cpAppt > 400 ? 'var(--red)' : cpAppt > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
+                      {cpAppt > 0 ? `$${Math.round(cpAppt)}` : '—'}
                     </td>
                     <td className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--green)' }}>{c.closed_deals}</td>
                     <td className="px-4 py-3 text-center" style={{ color: closeRate >= 30 ? 'var(--green)' : closeRate > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>

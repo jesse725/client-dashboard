@@ -40,7 +40,7 @@ export async function GET() {
   // this is the same priority logic the individual client dashboard uses.
   const agencyGhlKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
   const enriched = await Promise.all(clients.map(async (c) => {
-    let row = { ...c, total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client), meta_connected: false, best_ad_cpl: null as number | null, last_lead_at: null as string | null, contact_pct: null as number | null };
+    let row = { ...c, total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client), meta_connected: false, best_ad_cpl: null as number | null, last_lead_at: null as string | null, contact_pct: null as number | null, appointments: 0 };
     try {
       const live = await getLiveClientStats(c, agencyGhlKey);
       if (live.leads !== c.cached_leads || live.inhome !== c.cached_inhome) {
@@ -53,6 +53,8 @@ export async function GET() {
         cached_leads: live.leads, cached_inhome: live.inhome,
         total_ad_spend: live.totalAdSpend, meta_connected: live.metaConnected,
         contact_pct: live.leads > 0 ? (contactedOrAppt / live.leads) * 100 : null,
+        // Appointments = phone + in-home appointments combined
+        appointments: live.phone + live.inhome,
       };
     } catch { /* keep fallback total_ad_spend above */ }
 
