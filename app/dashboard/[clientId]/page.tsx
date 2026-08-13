@@ -11,7 +11,7 @@ import {
   Plus, CheckCircle, Clock, Settings, Target, BarChart2, Zap,
   MousePointerClick, Eye, Activity, AlertTriangle, Pencil, Trash2, Award, GraduationCap,
 } from 'lucide-react';
-import QuoteModal from '@/components/QuoteModal';
+import AppointmentDispositionModal from '@/components/AppointmentDispositionModal';
 import EditClientModal from '@/components/EditClientModal';
 import CallNotesSection from '@/components/CallNotesSection';
 
@@ -390,7 +390,7 @@ export default function ClientDashboardPage() {
                 <>
                   <StatCard
                     label="Impressions"
-                    value={metaStats.impressions >= 1000 ? `${(metaStats.impressions / 1000).toFixed(1)}k` : String(metaStats.impressions)}
+                    value={metaStats.impressions.toLocaleString()}
                     sub="total ad views"
                     icon={<Eye size={14} />}
                   />
@@ -428,7 +428,7 @@ export default function ClientDashboardPage() {
         {metaStats && (isAdmin || adPerformance.length > 0) && (
           <section>
             <SectionHeader icon={<Award size={15} />} title="Ad Creative Performance"
-              badge="Ranked by CPL" />
+              badge="Top 5 by CPL" />
             {loadingAdPerf ? (
               <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading ad performance…</div>
             ) : adPerformance.length === 0 ? (
@@ -447,8 +447,8 @@ export default function ClientDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {adPerformance.map((a, i) => (
-                        <tr key={a.adId} style={{ borderBottom: i < adPerformance.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      {adPerformance.slice(0, 5).map((a, i, arr) => (
+                        <tr key={a.adId} style={{ borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
                           <td className="px-4 py-2.5 font-medium max-w-xs truncate" title={a.adName}>{a.adName}</td>
                           <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)' }}>${Math.round(a.spend).toLocaleString()}</td>
                           <td className="px-4 py-2.5 text-center">{a.leads}</td>
@@ -469,7 +469,7 @@ export default function ClientDashboardPage() {
                   </table>
                 </div>
                 <div className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-                  Sorted best CPL → worst. Ads spending with no leads sort to the bottom. "Last Lead" in red (7+ days, or never) flags creative that's likely gone stale — good candidates to pause or swap.
+                  Showing top {Math.min(5, adPerformance.length)} of {adPerformance.length} ads, best CPL → worst. "Last Lead" in red (7+ days, or never) flags creative that's likely gone stale — good candidates to pause or swap.
                 </div>
               </div>
             )}
@@ -520,7 +520,7 @@ export default function ClientDashboardPage() {
             </div>
             <button onClick={() => { setEditingQuote(null); setShowQuote(true); }}
               className="btn-primary text-sm flex items-center gap-2">
-              <Plus size={14} /> Add Quote
+              <Plus size={14} /> Disposition Appointment
             </button>
           </div>
 
@@ -572,7 +572,7 @@ export default function ClientDashboardPage() {
           {quotes.length === 0 ? (
             <div className="card p-10 text-center">
               <FileText size={28} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-              <p style={{ color: 'var(--text-muted)' }}>No quotes yet. Add your first quote above.</p>
+              <p style={{ color: 'var(--text-muted)' }}>No appointments dispositioned yet. Add your first one above.</p>
             </div>
           ) : (
             <div className="card overflow-hidden">
@@ -862,7 +862,7 @@ export default function ClientDashboardPage() {
       </div>
 
       {showQuote && (
-        <QuoteModal
+        <AppointmentDispositionModal
           clientId={clientId}
           quote={editingQuote}
           onClose={() => { setShowQuote(false); setEditingQuote(null); }}

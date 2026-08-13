@@ -244,10 +244,10 @@ export default function ClientSharePage() {
             {metaStats ? (
               <>
                 <Tile label="Impressions"
-                  value={metaStats.impressions >= 1000 ? `${(metaStats.impressions / 1000).toFixed(1)}k` : fmt(metaStats.impressions)}
+                  value={fmt(metaStats.impressions)}
                   sub="total ad views" icon={<Eye size={14} />} />
                 <Tile label="Reach"
-                  value={metaStats.reach >= 1000 ? `${(metaStats.reach / 1000).toFixed(1)}k` : fmt(metaStats.reach)}
+                  value={fmt(metaStats.reach)}
                   sub="unique people" icon={<Users size={14} />} />
                 <Tile label="Clicks" value={fmt(metaStats.clicks)} sub="link clicks" icon={<MousePointerClick size={14} />} />
                 <Tile label="CTR" value={fmtPct(metaStats.ctr)} sub="click-through rate"

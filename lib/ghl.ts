@@ -150,7 +150,11 @@ export async function fetchGHLPipelineStats(
 
 export interface GHLOpportunityRaw {
   id: string;
+  name: string;
+  pipelineStageId: string;
+  monetaryValue?: number;
   createdAt: string;
+  contact?: { name?: string; email?: string; phone?: string };
   attributions?: { utmAdId?: string; adSource?: string }[];
 }
 

@@ -78,8 +78,6 @@ const SENTIMENT_CONFIG: Record<string, { icon: React.ReactNode; color: string; l
 };
 
 function fmt$(n: number) {
-  if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `$${(n / 1000).toFixed(0)}k`;
   return `$${Math.round(n).toLocaleString()}`;
 }
 function tenure(days: number) {
