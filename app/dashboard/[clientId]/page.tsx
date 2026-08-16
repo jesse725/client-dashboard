@@ -326,7 +326,7 @@ export default function ClientDashboardPage() {
 
             <div>
               <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Monthly Retainer</p>
-              <p className="font-semibold">${client.retainer_price.toLocaleString()}/mo</p>
+              <p className="font-semibold">{client.retainer_price != null ? `$${client.retainer_price.toLocaleString()}/mo` : '🔒 Hidden'}</p>
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide mb-1" style={{ color: 'var(--text-muted)' }}>Status</p>
@@ -704,7 +704,9 @@ export default function ClientDashboardPage() {
           </div>
           {/* Retainer context */}
           <div className="mt-3 flex flex-wrap gap-4 text-xs px-1" style={{ color: 'var(--text-muted)' }}>
-            <span>Retainer <span className="font-semibold" style={{ color: 'var(--text)' }}>${client.retainer_price.toLocaleString()}/mo · ${Math.round(m.totalRetainer).toLocaleString()} total</span></span>
+            <span>Retainer <span className="font-semibold" style={{ color: 'var(--text)' }}>
+              {client.retainer_price != null ? `$${client.retainer_price.toLocaleString()}/mo · $${Math.round(m.totalRetainer).toLocaleString()} total` : '🔒 Hidden'}
+            </span></span>
             <span>Ad Spend <span className="font-semibold" style={{ color: 'var(--text)' }}>${Math.round(adSpend).toLocaleString()} total</span></span>
             <span>Total Invested <span className="font-semibold" style={{ color: 'var(--text)' }}>${Math.round(totalCost).toLocaleString()}</span></span>
           </div>

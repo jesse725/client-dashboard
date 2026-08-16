@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { Client } from '@/types';
 import { X, Link2, Copy, Check, Trash2 } from 'lucide-react';
 
@@ -18,6 +19,9 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 }
 
 export default function EditClientModal({ client, onClose, onSaved }: Props) {
+  const { data: session } = useSession();
+  const canViewFinancials = !!(session?.user as any)?.canViewFinancials;
+
   const [form, setForm] = useState({
     name: client.name,
     contact_name: (client as any).contact_name ?? '',
@@ -31,7 +35,7 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
     date_launched: client.date_launched ?? '',
     date_billed: client.date_billed ?? '',
     rebilling_date: client.rebilling_date ?? '',
-    retainer_price: String(client.retainer_price),
+    retainer_price: client.retainer_price != null ? String(client.retainer_price) : '',
     daily_ad_spend: String(client.daily_ad_spend ?? 0),
     ad_spend: String(client.ad_spend),
     next_checkin: client.next_checkin ?? '',
@@ -68,7 +72,9 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
-        retainer_price: Number(form.retainer_price) || 0,
+        // Server also enforces this, but don't even send a value for a field
+        // that was hidden from this admin
+        retainer_price: canViewFinancials ? (Number(form.retainer_price) || 0) : undefined,
         ad_spend: Number(form.ad_spend) || 0,
         daily_ad_spend: Number(form.daily_ad_spend) || 0,
         next_checkin: form.next_checkin || null,
@@ -153,7 +159,11 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Retainer ($/mo)</Label>
-              <input className="input" type="number" min="0" value={form.retainer_price} onChange={(e) => set('retainer_price', e.target.value)} />
+              {canViewFinancials ? (
+                <input className="input" type="number" min="0" value={form.retainer_price} onChange={(e) => set('retainer_price', e.target.value)} />
+              ) : (
+                <div className="input flex items-center" style={{ color: 'var(--text-muted)' }}>🔒 Only Jesse can view/edit this</div>
+              )}
             </div>
             <div>
               <Label>Next Check-In Call</Label>

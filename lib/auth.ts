@@ -3,6 +3,12 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { getDb } from './db';
 
+// Only Jesse can see retainer/MRR figures — every other admin (team members
+// managing GHL sync, onboarding, etc.) gets those numbers stripped server-side.
+export function canViewFinancials(email: string | null | undefined): boolean {
+  return (email ?? '').trim().toLowerCase() === 'jesse@merovamedia.com';
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -59,6 +65,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           role: user.role,
           clientId: user.client_id ? String(user.client_id) : null,
+          canViewFinancials: canViewFinancials(user.email),
         };
       },
     }),
@@ -68,6 +75,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as any).role;
         token.clientId = (user as any).clientId;
+        token.canViewFinancials = (user as any).canViewFinancials ?? false;
       }
       return token;
     },
@@ -76,6 +84,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).clientId = token.clientId;
         (session.user as any).id = token.sub;
+        (session.user as any).canViewFinancials = token.canViewFinancials ?? false;
       }
       return session;
     },

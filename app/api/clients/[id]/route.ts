@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { authOptions, canViewFinancials } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -9,12 +9,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as any;
   if (!client) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const user = session.user as any;
   if (user.role !== 'admin' && String(user.clientId) !== id) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // Clients see their own retainer as normal — only non-Jesse admins get it masked
+  if (user.role === 'admin' && !canViewFinancials(user.email)) {
+    client.retainer_price = null;
   }
 
   return NextResponse.json(client);
@@ -47,7 +52,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     'contact_name', 'contact_email', 'contact_phone', 'address', 'ein', 'target_locations',
   ];
 
-  const updates = fields.filter((f) => f in body);
+  // Non-Jesse admins can't see the retainer, so they shouldn't be able to
+  // blind-edit it either
+  const editableFields = canViewFinancials(user.email) ? fields : fields.filter(f => f !== 'retainer_price');
+  const updates = editableFields.filter((f) => f in body);
   if (updates.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
 
   const set = updates.map((f) => `${f} = ?`).join(', ');

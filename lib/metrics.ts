@@ -38,7 +38,10 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
         ? client.ad_spend
         : (client.daily_ad_spend ?? 0) * daysTogether;
 
-  const totalRetainer = client.retainer_price * monthsWorked;
+  // retainer_price is null when masked from a non-Jesse admin — falls back to
+  // 0 so ROI/cost math doesn't NaN out; those figures are simply approximate
+  // (ad-spend-only) for admins who can't see the retainer.
+  const totalRetainer = (client.retainer_price ?? 0) * monthsWorked;
   const totalCost     = totalAdSpend + totalRetainer;
 
   const roi  = totalCost > 0 ? ((totalRevenue - totalCost) / totalCost) * 100 : 0;

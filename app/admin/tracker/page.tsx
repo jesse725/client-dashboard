@@ -16,7 +16,7 @@ interface ClientRow {
   name: string;
   start_date: string;
   date_launched: string | null;
-  retainer_price: number;
+  retainer_price: number | null; // null when masked from a non-Jesse admin
   daily_ad_spend: number;
   ad_spend: number;
   client_status: string;
@@ -32,7 +32,7 @@ interface ClientRow {
   closed_deals: number;
   revenue_closed: number;
   days_as_client: number;
-  total_payments_received: number;
+  total_payments_received: number | null; // null when masked from a non-Jesse admin
   latest_sentiment: string | null;
   total_ad_spend: number;
   meta_connected: boolean;
@@ -79,6 +79,22 @@ const SENTIMENT_CONFIG: Record<string, { icon: React.ReactNode; color: string; l
 
 function fmt$(n: number) {
   return `$${Math.round(n).toLocaleString()}`;
+}
+// retainer_price comes back null from the API for any admin who isn't Jesse
+function fmtRetainer(v: number | null): string {
+  return v == null ? '🔒 Hidden' : `${fmt$(v)}/mo`;
+}
+function sumRetainer(clients: ClientRow[]): string {
+  if (clients.length > 0 && clients.every(c => c.retainer_price == null)) return '🔒 Hidden';
+  return fmt$(clients.reduce((s, c) => s + (c.retainer_price ?? 0), 0));
+}
+// total_payments_received (LTV) is derived from retainer, so it's masked the same way
+function fmtLTV(v: number | null): string {
+  return v == null ? '🔒 Hidden' : fmt$(v);
+}
+function sumLTV(clients: ClientRow[]): string {
+  if (clients.length > 0 && clients.every(c => c.total_payments_received == null)) return '🔒 Hidden';
+  return fmt$(clients.reduce((s, c) => s + (c.total_payments_received ?? 0), 0));
 }
 function tenure(days: number) {
   if (days < 30) return `${days}d`;
@@ -167,7 +183,7 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
       <div className="grid grid-cols-2 gap-1.5 text-xs">
         <div className="rounded p-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
           <p style={{ color: 'var(--text-muted)' }}>Retainer</p>
-          <p className="font-bold" style={{ color: 'var(--accent)' }}>{fmt$(c.retainer_price || 0)}/mo</p>
+          <p className="font-bold" style={{ color: 'var(--accent)' }}>{fmtRetainer(c.retainer_price)}</p>
         </div>
         <div className="rounded p-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
           <p style={{ color: 'var(--text-muted)' }}>CPL</p>
@@ -209,7 +225,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         {[
           { label: 'Active Clients',   value: String(active.length),                                          color: 'var(--accent)' },
-          { label: 'MRR',              value: fmt$(active.reduce((s, c) => s + (c.retainer_price || 0), 0)), color: 'var(--green)' },
+          { label: 'MRR',              value: sumRetainer(active), color: 'var(--green)' },
           { label: 'Total Ad Spend',   value: fmt$(active.reduce((s, c) => s + (c.total_ad_spend || 0), 0)), color: 'var(--yellow)' },
           { label: 'Total Leads',      value: String(active.reduce((s, c) => s + c.cached_leads, 0)),        color: 'var(--yellow)' },
           { label: 'Jobs Closed',      value: String(active.reduce((s, c) => s + c.closed_deals, 0)),        color: 'var(--green)' },
@@ -266,7 +282,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                       </span>
                     </td>
                     <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>{tenure(daysSinceLaunch(c))}</td>
-                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(c.retainer_price || 0)}/mo</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmtRetainer(c.retainer_price)}</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--yellow)' }}>
                       {totalAdSpend > 0 ? fmt$(totalAdSpend) : '—'}
                       {c.meta_connected && <span className="ml-1 text-xs" style={{ color: 'var(--green)' }} title="Live from Meta">●</span>}
@@ -375,7 +391,7 @@ function MonthView({ clients, onSelect }: { clients: ClientRow[]; onSelect: (c: 
             </p>
           </div>
           <p className="font-bold text-lg" style={{ color: 'var(--green)' }}>
-            {fmt$(current.reduce((s, c) => s + (c.retainer_price || 0), 0))}/mo
+            {sumRetainer(current)}/mo
           </p>
         </div>
       )}
@@ -399,8 +415,6 @@ function MonthView({ clients, onSelect }: { clients: ClientRow[]; onSelect: (c: 
 function InternalView({ clients }: { clients: ClientRow[] }) {
   const active = clients.filter(c => c.client_status !== 'Churned');
   const churned = clients.filter(c => c.client_status === 'Churned');
-  const totalMRR = active.reduce((s, c) => s + (c.retainer_price || 0), 0);
-  const totalLTV = clients.reduce((s, c) => s + (c.total_payments_received || 0), 0);
   const churnRate = clients.length > 0 ? (churned.length / clients.length) * 100 : 0;
   const testimonials = clients.filter(c => c.testimonial_collected).length;
 
@@ -409,8 +423,8 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'MRR',              value: fmt$(totalMRR),                       sub: `${active.length} active clients`,    color: 'var(--green)' },
-          { label: 'Total LTV',        value: fmt$(totalLTV),                       sub: 'All-time payments received',         color: 'var(--accent)' },
+          { label: 'MRR',              value: sumRetainer(active),                  sub: `${active.length} active clients`,    color: 'var(--green)' },
+          { label: 'Total LTV',        value: sumLTV(clients),                      sub: 'All-time payments received',         color: 'var(--accent)' },
           { label: 'Churn Rate',       value: `${churnRate.toFixed(1)}%`,           sub: `${churned.length} churned`,          color: churnRate > 20 ? 'var(--red)' : churnRate > 10 ? 'var(--yellow)' : 'var(--green)' },
           { label: 'Testimonials',     value: `${testimonials}/${clients.length}`,  sub: 'Collected',                          color: 'var(--accent)' },
         ].map(s => (
@@ -438,7 +452,6 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
             </thead>
             <tbody>
               {clients.map((c, i) => {
-                const ltv = c.total_payments_received || 0;
                 const isChurned = c.client_status === 'Churned';
                 return (
                   <tr key={c.id}
@@ -462,10 +475,10 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
                       </span>
                     </td>
                     <td className="px-4 py-3 font-semibold" style={{ color: isChurned ? 'var(--text-muted)' : 'var(--green)' }}>
-                      {isChurned ? '—' : fmt$(c.retainer_price || 0) + '/mo'}
+                      {isChurned ? '—' : fmtRetainer(c.retainer_price)}
                     </td>
                     <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{tenure(daysSinceLaunch(c))}</td>
-                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(ltv)}</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmtLTV(c.total_payments_received)}</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--green)' }}>
                       {c.revenue_closed > 0 ? fmt$(c.revenue_closed) : '—'}
                     </td>
@@ -495,10 +508,10 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
               <div key={c.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
                   <p className="font-medium">{c.name}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Was paying {fmt$(c.retainer_price || 0)}/mo · {tenure(daysSinceLaunch(c))} tenure</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Was paying {fmtRetainer(c.retainer_price)} · {tenure(daysSinceLaunch(c))} tenure</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(c.total_payments_received || 0)} LTV</p>
+                  <p className="font-semibold" style={{ color: 'var(--accent)' }}>{fmtLTV(c.total_payments_received)} LTV</p>
                   {c.testimonial_collected && <p className="text-xs" style={{ color: '#22c55e' }}>Testimonial ✓</p>}
                 </div>
               </div>
@@ -588,7 +601,6 @@ export default function TrackerPage() {
   );
 
   const active = clients.filter(c => c.client_status !== 'Churned');
-  const totalMRR = active.reduce((s, c) => s + (c.retainer_price || 0), 0);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
@@ -604,7 +616,7 @@ export default function TrackerPage() {
           <Link href="/admin/sales" className="text-sm hover:opacity-70 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
             <TrendingUp size={13} /> Sales
           </Link>
-          <span className="text-sm font-semibold" style={{ color: 'var(--green)' }}>{fmt$(totalMRR)}/mo MRR</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--green)' }}>{sumRetainer(active)} MRR</span>
         </div>
         <div className="flex items-center gap-2">
           {/* View tabs */}

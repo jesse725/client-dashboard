@@ -114,7 +114,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="card-2 p-3">
                       <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Retainer</p>
-                      <p className="font-semibold">${client.retainer_price.toLocaleString()}/mo</p>
+                      <p className="font-semibold">{client.retainer_price != null ? `$${client.retainer_price.toLocaleString()}/mo` : '🔒 Hidden'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 mt-3">

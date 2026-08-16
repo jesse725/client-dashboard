@@ -11,7 +11,7 @@ export interface Client {
   stage_unqualified: string | null;
   stage_phone: string | null;
   stage_inhome: string | null;
-  retainer_price: number;
+  retainer_price: number | null; // null when masked from a non-Jesse admin
   ad_spend: number;
   contract_url: string | null;
   ad_account_url: string | null;

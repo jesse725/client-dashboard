@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { authOptions, canViewFinancials } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { getLiveClientStats } from '@/lib/clientStats';
 import { getClientAdPerformance } from '@/lib/adPerformance';
@@ -11,6 +11,7 @@ export async function GET() {
   if (!session || user?.role !== 'admin') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  const showFinancials = canViewFinancials(user.email);
 
   const db = getDb();
 
@@ -67,7 +68,11 @@ export async function GET() {
     return row;
   }));
 
-  return NextResponse.json(enriched);
+  const finalRows = showFinancials
+    ? enriched
+    : enriched.map(r => ({ ...r, retainer_price: null, total_payments_received: null }));
+
+  return NextResponse.json(finalRows);
 }
 
 export async function PATCH(req: Request) {

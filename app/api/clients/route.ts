@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { authOptions, canViewFinancials } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { fetchLocationPipelines } from '@/lib/ghl';
 import crypto from 'crypto';
@@ -14,8 +14,11 @@ export async function GET() {
   const user = session.user as any;
 
   if (user.role === 'admin') {
-    const clients = db.prepare('SELECT * FROM clients ORDER BY name').all();
-    return NextResponse.json(clients);
+    const clients = db.prepare('SELECT * FROM clients ORDER BY name').all() as any[];
+    const visible = canViewFinancials(user.email)
+      ? clients
+      : clients.map(c => ({ ...c, retainer_price: null }));
+    return NextResponse.json(visible);
   } else {
     const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(user.clientId);
     return NextResponse.json(client ? [client] : []);
