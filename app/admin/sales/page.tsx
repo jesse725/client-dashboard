@@ -103,7 +103,10 @@ function StatCard({ label, value, sub, color, icon }: {
 }
 
 // ── Funnel View ───────────────────────────────────────────────────────────────
-function FunnelView({ opps, adSpend, dispositions }: { opps: Opp[]; adSpend: number; dispositions: Record<string, Disposition> }) {
+function FunnelView({ opps, adSpend, adSpendSource, dispositions, roiData }: {
+  opps: Opp[]; adSpend: number; adSpendSource: 'meta' | 'manual';
+  dispositions: Record<string, Disposition>; roiData: { hidden: boolean; totalMRR?: number; totalLTV?: number; activeClients?: number } | null;
+}) {
   const total = opps.length;
   const bookedOpps = opps.filter(isBookedOpp);
   const booked = bookedOpps.length;
@@ -111,7 +114,14 @@ function FunnelView({ opps, adSpend, dispositions }: { opps: Opp[]; adSpend: num
   const qualified = bookedOpps.filter(o => oppQualified(o, dispositions)).length;
   const won = opps.filter(oppClosed).length;
   const wonValue = opps.filter(oppClosed).reduce((s, o) => s + (o.monetaryValue || 0), 0);
-  const cpa = won > 0 && adSpend > 0 ? adSpend / won : 0;
+
+  // Real cost math, only meaningful once real ad spend is wired in (Meta or manual)
+  const cac  = won > 0       && adSpend > 0 ? adSpend / won       : 0; // Customer Acquisition Cost
+  const cpbc = booked > 0    && adSpend > 0 ? adSpend / booked    : 0; // Cost Per Booked Call
+  const cpqc = qualified > 0 && adSpend > 0 ? adSpend / qualified : 0; // Cost Per Qualified Call
+
+  const ltvToCac = roiData && !roiData.hidden && roiData.totalLTV != null && adSpend > 0 ? roiData.totalLTV / adSpend : null;
+  const profit = roiData && !roiData.hidden && roiData.totalLTV != null ? roiData.totalLTV - adSpend : null;
 
   const steps = [
     { label: 'Total Leads',     count: total,     pctOf: null,      color: '#6c63ff' },
@@ -123,16 +133,67 @@ function FunnelView({ opps, adSpend, dispositions }: { opps: Opp[]; adSpend: num
 
   return (
     <div className="space-y-6">
-      {/* Key metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <StatCard label="Total Leads"    value={String(total)}                   color="#6c63ff" icon={<Users size={16} />} />
-        <StatCard label="Calls Booked"   value={String(booked)}  sub={`${pct(booked, total)} book rate`}  color="#8b5cf6" icon={<Calendar size={16} />} />
-        <StatCard label="Show Rate"      value={pct(showed, booked)}             color="#0891b2" icon={<PhoneCall size={16} />} sub={`${showed} showed`} />
-        <StatCard label="Qualified Rate" value={pct(qualified, showed)}          color="#f59e0b" icon={<Target size={16} />}    sub={`${qualified} qualified`} />
-        <StatCard label="Close Rate"     value={pct(won, qualified)}             color="#16a34a" icon={<Check size={16} />}    sub={`${won} closed`} />
-        <StatCard label="Revenue Won"    value={fmt$(wonValue)}                  color="#0d9488" icon={<DollarSign size={16} />} />
-        <StatCard label="Cost / Acq."    value={cpa > 0 ? fmt$(cpa) : '—'}      color="#dc7a3e" icon={<Target size={16} />}  sub={adSpend > 0 ? `${fmt$(adSpend)} ad spend` : 'Set ad spend'} />
+      {/* Data source note */}
+      <div className="card p-3 text-xs flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
+        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+        <span>
+          Every count below comes straight from the pipeline: Leads/Booked/Closed from GHL stages, Showed/Qualified from the dispositions you set in the Table view.{' '}
+          Cost figures use {adSpendSource === 'meta' ? <strong style={{ color: 'var(--green)' }}>live Meta spend</strong> : <strong style={{ color: 'var(--yellow)' }}>your manual ad spend entry</strong>} — connect Meta in Ad Health for exact numbers.
+        </span>
       </div>
+
+      {/* Pipeline volume & rates */}
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Pipeline</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <StatCard label="Total Leads"    value={String(total)}                   color="#6c63ff" icon={<Users size={16} />} />
+          <StatCard label="Calls Booked"   value={String(booked)}  sub={`${pct(booked, total)} book rate`}  color="#8b5cf6" icon={<Calendar size={16} />} />
+          <StatCard label="Showed Up"      value={String(showed)} sub={`${pct(showed, booked)} show rate`} color="#0891b2" icon={<PhoneCall size={16} />} />
+          <StatCard label="Qualified"      value={String(qualified)} sub={`${pct(qualified, showed)} qualification rate`} color="#f59e0b" icon={<Target size={16} />} />
+          <StatCard label="Closed / Won"   value={String(won)} sub={`${pct(won, qualified)} close rate`} color="#16a34a" icon={<Check size={16} />} />
+        </div>
+      </div>
+
+      {/* Cost & ROI */}
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Cost &amp; ROI</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatCard label="Ad Spend"          value={fmt$(adSpend)}                  color="#f59e0b" icon={<DollarSign size={16} />} sub={adSpendSource === 'meta' ? 'live from Meta' : 'manual entry'} />
+          <StatCard label="Cost / Call"        value={cpbc > 0 ? fmt$(cpbc) : '—'}   color="#0891b2" icon={<PhoneCall size={16} />}  sub={`per booked call`} />
+          <StatCard label="Cost / Qualified"   value={cpqc > 0 ? fmt$(cpqc) : '—'}   color="#dc7a3e" icon={<Target size={16} />}     sub={`per qualified call`} />
+          <StatCard label="CAC"                value={cac > 0 ? fmt$(cac) : '—'}     color="#ef4444" icon={<Target size={16} />}     sub={`per closed deal`} />
+          <StatCard label="Revenue Won"        value={fmt$(wonValue)}                 color="#0d9488" icon={<DollarSign size={16} />} />
+          {roiData?.hidden ? (
+            <StatCard label="LTV : CAC" value="🔒 Hidden" color="var(--text-muted)" icon={<TrendingUp size={16} />} />
+          ) : ltvToCac != null ? (
+            <StatCard label="LTV : CAC" value={`${ltvToCac.toFixed(1)}x`} color={ltvToCac >= 3 ? 'var(--green)' : ltvToCac >= 1 ? 'var(--yellow)' : 'var(--red)'} icon={<TrendingUp size={16} />} sub="client value vs. ad spend" />
+          ) : (
+            <StatCard label="LTV : CAC" value="—" color="var(--text-muted)" icon={<TrendingUp size={16} />} sub="needs ad spend" />
+          )}
+        </div>
+      </div>
+
+      {/* Client ROI — ties ad spend to what acquired clients are actually worth */}
+      {roiData && (
+        <div className="card p-5">
+          <h3 className="font-semibold text-sm mb-1">Client ROI</h3>
+          {roiData.hidden ? (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>🔒 Only Jesse can view this — it's derived from client retainer amounts.</p>
+          ) : (
+            <>
+              <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                What every dollar of ad spend has bought so far, based on current MRR × months each client has been with us.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <StatCard label="Active Clients" value={String(roiData.activeClients ?? 0)} color="#6c63ff" icon={<Users size={16} />} />
+                <StatCard label="Total MRR"      value={fmt$(roiData.totalMRR ?? 0)}        color="var(--green)" icon={<DollarSign size={16} />} />
+                <StatCard label="Total LTV So Far" value={fmt$(roiData.totalLTV ?? 0)}      color="var(--accent)" icon={<TrendingUp size={16} />} sub="revenue collected to date" />
+                <StatCard label="Profit vs. Ad Spend" value={profit != null ? fmt$(profit) : '—'} color={profit != null && profit >= 0 ? 'var(--green)' : 'var(--red)'} icon={<DollarSign size={16} />} />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Funnel */}
       <div className="card p-6">
@@ -726,7 +787,7 @@ function WeeklyView({ opps, dispositions }: { opps: Opp[]; dispositions: Record<
 // ── Ad Health View ──────────────────────────────────────────────────────────────
 interface MetaStatsBlock { spend: number; impressions: number; clicks: number; ctr: number; cpc: number; reach: number; frequency: number }
 
-function AdHealthView() {
+function AdHealthView({ closedDeals }: { closedDeals: number }) {
   const [connected, setConnected] = useState(false);
   const [adAccountId, setAdAccountId] = useState('');
   const [tokenInput, setTokenInput] = useState('');
@@ -815,19 +876,22 @@ function AdHealthView() {
       {connected && !stats?.error && stats && (
         <>
           {([
-            { label: 'Last 7 Days', block: stats.last7d },
-            { label: 'This Month', block: stats.thisMonth },
-            { label: 'Lifetime', block: stats.lifetime },
-          ] as const).map(({ label, block }) => block && (
+            { label: 'Last 7 Days', block: stats.last7d, showCac: false },
+            { label: 'This Month', block: stats.thisMonth, showCac: false },
+            { label: 'Lifetime', block: stats.lifetime, showCac: true },
+          ] as const).map(({ label, block, showCac }) => block && (
             <div key={label} className="card p-5">
               <h3 className="font-semibold text-sm mb-3">{label}</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
                 <StatCard label="Spend"       value={fmt$(block.spend)}                    color="#f59e0b" icon={<DollarSign size={16} />} />
                 <StatCard label="Impressions" value={block.impressions.toLocaleString()}    color="#6c63ff" icon={<Eye size={16} />} />
                 <StatCard label="Clicks"      value={block.clicks.toLocaleString()}         color="#0891b2" icon={<MousePointerClick size={16} />} />
                 <StatCard label="CTR"         value={`${block.ctr.toFixed(2)}%`}            color="#16a34a" icon={<Activity size={16} />} />
                 <StatCard label="CPC"         value={`$${block.cpc.toFixed(2)}`}            color="#dc7a3e" icon={<Target size={16} />} />
                 <StatCard label="Reach"       value={block.reach.toLocaleString()}          color="#8b5cf6" icon={<Users size={16} />} />
+                {showCac && (
+                  <StatCard label="CAC" value={closedDeals > 0 ? fmt$(block.spend / closedDeals) : '—'} color="#ef4444" icon={<Target size={16} />} sub={`${closedDeals} closed`} />
+                )}
               </div>
             </div>
           ))}
@@ -838,17 +902,26 @@ function AdHealthView() {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+interface RoiData { hidden: boolean; activeClients?: number; totalClients?: number; totalMRR?: number; totalLTV?: number }
+
 export default function SalesPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [opps, setOpps] = useState<Opp[]>([]);
-  const [adSpend, setAdSpend] = useState(0);
+  const [manualAdSpend, setManualAdSpend] = useState(0);
   const [adSpendInput, setAdSpendInput] = useState('');
   const [editingAdSpend, setEditingAdSpend] = useState(false);
+  const [metaLifetimeSpend, setMetaLifetimeSpend] = useState<number | null>(null);
+  const [roiData, setRoiData] = useState<RoiData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [view, setView] = useState<'funnel' | 'kanban' | 'table' | 'weekly' | 'adhealth'>('funnel');
   const [dispositions, setDispositions] = useState<Record<string, Disposition>>({});
+
+  // True CAC needs true spend: live Meta lifetime spend wins when connected,
+  // manual entry is only the fallback for accounts not yet hooked up.
+  const adSpend = metaLifetimeSpend != null && metaLifetimeSpend > 0 ? metaLifetimeSpend : manualAdSpend;
+  const adSpendSource: 'meta' | 'manual' = metaLifetimeSpend != null && metaLifetimeSpend > 0 ? 'meta' : 'manual';
 
   useEffect(() => {
     const user = session?.user as any;
@@ -858,19 +931,28 @@ export default function SalesPage() {
   const loadData = useCallback(async () => {
     if (status !== 'authenticated') return;
     setSyncing(true);
-    const [pipelineRes, dispRes] = await Promise.all([
+    const [pipelineRes, dispRes, metaRes, roiRes] = await Promise.all([
       fetch('/api/admin/sales-pipeline'),
       fetch('/api/admin/lead-dispositions'),
+      fetch('/api/admin/sales-meta-ads'),
+      fetch('/api/admin/sales-roi'),
     ]);
     if (pipelineRes.ok) {
       const data = await pipelineRes.json();
       setOpps(data.opportunities ?? []);
-      setAdSpend(data.adSpend ?? 0);
+      setManualAdSpend(data.adSpend ?? 0);
       setAdSpendInput(String(data.adSpend ?? ''));
     }
     if (dispRes.ok) {
       const rows: { opp_id: string; showed: 0 | 1 | null; qualified: 0 | 1 | null }[] = await dispRes.json();
       setDispositions(Object.fromEntries(rows.map(r => [r.opp_id, { showed: r.showed, qualified: r.qualified }])));
+    }
+    if (metaRes.ok) {
+      const data = await metaRes.json();
+      setMetaLifetimeSpend(data.connected && !data.error ? (data.lifetime?.spend ?? 0) : null);
+    }
+    if (roiRes.ok) {
+      setRoiData(await roiRes.json());
     }
     setLoading(false);
     setSyncing(false);
@@ -902,7 +984,7 @@ export default function SalesPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adSpend: val }),
     });
-    setAdSpend(val);
+    setManualAdSpend(val);
     setEditingAdSpend(false);
   }
 
@@ -935,9 +1017,13 @@ export default function SalesPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Ad Spend */}
+          {/* Ad Spend — live Meta wins, manual is only a fallback for CAC */}
           <div className="flex items-center gap-1">
-            {editingAdSpend ? (
+            {adSpendSource === 'meta' ? (
+              <span className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 border" style={{ color: 'var(--green)', borderColor: 'var(--green)' }}>
+                <Zap size={11} /> {fmt$(adSpend)} live from Meta
+              </span>
+            ) : editingAdSpend ? (
               <>
                 <input
                   type="number"
@@ -955,9 +1041,9 @@ export default function SalesPage() {
             ) : (
               <button onClick={() => setEditingAdSpend(true)}
                 className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 border transition-colors hover:border-[var(--accent)]"
-                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }} title="Connect Meta in Ad Health for live, accurate spend">
                 <DollarSign size={11} />
-                {adSpend > 0 ? `Ad Spend: ${fmt$(adSpend)}` : 'Set Ad Spend'}
+                {adSpend > 0 ? `Ad Spend (manual): ${fmt$(adSpend)}` : 'Set Ad Spend (manual)'}
               </button>
             )}
           </div>
@@ -987,9 +1073,9 @@ export default function SalesPage() {
       </nav>
 
       <div className="px-6 py-6">
-        {view === 'funnel'   && <FunnelView opps={opps} adSpend={adSpend} dispositions={dispositions} />}
+        {view === 'funnel'   && <FunnelView opps={opps} adSpend={adSpend} adSpendSource={adSpendSource} dispositions={dispositions} roiData={roiData} />}
         {view === 'weekly'   && <WeeklyView opps={opps} dispositions={dispositions} />}
-        {view === 'adhealth' && <AdHealthView />}
+        {view === 'adhealth' && <AdHealthView closedDeals={wonOpps.length} />}
         {view === 'kanban'   && <KanbanView opps={opps} dispositions={dispositions} />}
         {view === 'table'    && <TableView  opps={opps} dispositions={dispositions} onDisposition={handleDisposition} />}
       </div>
