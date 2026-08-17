@@ -103,32 +103,48 @@ function StatCard({ label, value, sub, color, icon }: {
 }
 
 // ── Funnel View ───────────────────────────────────────────────────────────────
-function FunnelView({ opps, adSpend, adSpendSource, dispositions, roiData }: {
+function FunnelView({ opps, adSpend, adSpendSource, roiData }: {
   opps: Opp[]; adSpend: number; adSpendSource: 'meta' | 'manual';
-  dispositions: Record<string, Disposition>; roiData: { hidden: boolean; totalMRR?: number; totalLTV?: number; activeClients?: number } | null;
+  roiData: { hidden: boolean; totalMRR?: number; totalLTV?: number; activeClients?: number } | null;
 }) {
   const total = opps.length;
-  const bookedOpps = opps.filter(isBookedOpp);
-  const booked = bookedOpps.length;
-  const showed = bookedOpps.filter(o => oppShowed(o, dispositions)).length;
-  const qualified = bookedOpps.filter(o => oppQualified(o, dispositions)).length;
-  const won = opps.filter(oppClosed).length;
+
+  // Pure stage-based counts — ground truth is which GHL stage an opp currently sits in.
+  const countByStage = (name: string) => opps.filter(o => STAGE_MAP[o.stageId]?.name === name).length;
+  const closedCount    = countByStage('Closed');
+  const depositCount   = countByStage('Deposit');
+  const rescheduled    = countByStage('Rescheduled');
+  const noShowCount    = countByStage('No-showed');
+  const unqualified    = countByStage('Unqualified');
+  const lostCount      = countByStage('Lost');
+  const couldntClose   = countByStage("Couldn't Close Follow Up");
+  const strategyBooked = countByStage('Strategy Call Booked');
+
+  const won = closedCount + depositCount;
   const wonValue = opps.filter(oppClosed).reduce((s, o) => s + (o.monetaryValue || 0), 0);
 
+  // Shown = calls that actually happened: closed, deposit, couldn't-close-followup, or lost after the call.
+  const shown = closedCount + depositCount + couldntClose + lostCount;
+  // Booked = everyone who ever booked a call, minus pure pre-call leads and "Follow Up Required";
+  // Unqualified only counts half since some of those never actually booked.
+  const booked = strategyBooked + depositCount + rescheduled + noShowCount + closedCount + lostCount + couldntClose + (0.5 * unqualified);
+
+  const showRate = booked > 0 ? (shown / booked) * 100 : 0;
+  const noShowRate = booked > 0 ? ((noShowCount + rescheduled) / booked) * 100 : 0;
+  const closeRate = shown > 0 ? (won / shown) * 100 : 0;
+
   // Real cost math, only meaningful once real ad spend is wired in (Meta or manual)
-  const cac  = won > 0       && adSpend > 0 ? adSpend / won       : 0; // Customer Acquisition Cost
-  const cpbc = booked > 0    && adSpend > 0 ? adSpend / booked    : 0; // Cost Per Booked Call
-  const cpqc = qualified > 0 && adSpend > 0 ? adSpend / qualified : 0; // Cost Per Qualified Call
+  const cac  = won > 0    && adSpend > 0 ? adSpend / won    : 0; // Customer Acquisition Cost
+  const cpbc = booked > 0 && adSpend > 0 ? adSpend / booked : 0; // Cost Per Booked Call
 
   const ltvToCac = roiData && !roiData.hidden && roiData.totalLTV != null && adSpend > 0 ? roiData.totalLTV / adSpend : null;
   const profit = roiData && !roiData.hidden && roiData.totalLTV != null ? roiData.totalLTV - adSpend : null;
 
   const steps = [
-    { label: 'Total Leads',     count: total,     pctOf: null,      color: '#6c63ff' },
-    { label: 'Calls Booked',    count: booked,    pctOf: total,     color: '#8b5cf6' },
-    { label: 'Showed Up',       count: showed,    pctOf: booked,    color: '#0891b2' },
-    { label: 'Qualified',       count: qualified, pctOf: showed,    color: '#f59e0b' },
-    { label: 'Closed / Won',    count: won,       pctOf: qualified, color: '#16a34a' },
+    { label: 'Total Leads',     count: total,   pctOf: null,   color: '#6c63ff' },
+    { label: 'Calls Booked',    count: booked,  pctOf: total,  color: '#8b5cf6' },
+    { label: 'Showed Up',       count: shown,   pctOf: booked, color: '#0891b2' },
+    { label: 'Closed / Won',    count: won,     pctOf: shown,  color: '#16a34a' },
   ];
 
   return (
@@ -137,7 +153,7 @@ function FunnelView({ opps, adSpend, adSpendSource, dispositions, roiData }: {
       <div className="card p-3 text-xs flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
         <span>
-          Every count below comes straight from the pipeline: Leads/Booked/Closed from GHL stages, Showed/Qualified from the dispositions you set in the Table view.{' '}
+          Every count below comes straight from the GHL pipeline stages — Booked/Shown/No-Show/Closed are all derived from which stage each opp currently sits in, no manual dispositioning needed.{' '}
           Cost figures use {adSpendSource === 'meta' ? <strong style={{ color: 'var(--green)' }}>live Meta spend</strong> : <strong style={{ color: 'var(--yellow)' }}>your manual ad spend entry</strong>} — connect Meta in Ad Health for exact numbers.
         </span>
       </div>
@@ -147,20 +163,19 @@ function FunnelView({ opps, adSpend, adSpendSource, dispositions, roiData }: {
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Pipeline</h3>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <StatCard label="Total Leads"    value={String(total)}                   color="#6c63ff" icon={<Users size={16} />} />
-          <StatCard label="Calls Booked"   value={String(booked)}  sub={`${pct(booked, total)} book rate`}  color="#8b5cf6" icon={<Calendar size={16} />} />
-          <StatCard label="Showed Up"      value={String(showed)} sub={`${pct(showed, booked)} show rate`} color="#0891b2" icon={<PhoneCall size={16} />} />
-          <StatCard label="Qualified"      value={String(qualified)} sub={`${pct(qualified, showed)} qualification rate`} color="#f59e0b" icon={<Target size={16} />} />
-          <StatCard label="Closed / Won"   value={String(won)} sub={`${pct(won, qualified)} close rate`} color="#16a34a" icon={<Check size={16} />} />
+          <StatCard label="Calls Booked"   value={String(Math.round(booked))}  sub={`${pct(booked, total)} book rate`}  color="#8b5cf6" icon={<Calendar size={16} />} />
+          <StatCard label="Showed Up"      value={String(shown)} sub={`${Math.round(showRate)}% show rate`} color="#0891b2" icon={<PhoneCall size={16} />} />
+          <StatCard label="No-Show"        value={`${Math.round(noShowRate)}%`} sub="no-show + reschedule / booked" color="#e11d48" icon={<X size={16} />} />
+          <StatCard label="Closed / Won"   value={String(won)} sub={`${Math.round(closeRate)}% close rate`} color="#16a34a" icon={<Check size={16} />} />
         </div>
       </div>
 
       {/* Cost & ROI */}
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Cost &amp; ROI</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <StatCard label="Ad Spend"          value={fmt$(adSpend)}                  color="#f59e0b" icon={<DollarSign size={16} />} sub={adSpendSource === 'meta' ? 'live from Meta' : 'manual entry'} />
           <StatCard label="Cost / Call"        value={cpbc > 0 ? fmt$(cpbc) : '—'}   color="#0891b2" icon={<PhoneCall size={16} />}  sub={`per booked call`} />
-          <StatCard label="Cost / Qualified"   value={cpqc > 0 ? fmt$(cpqc) : '—'}   color="#dc7a3e" icon={<Target size={16} />}     sub={`per qualified call`} />
           <StatCard label="CAC"                value={cac > 0 ? fmt$(cac) : '—'}     color="#ef4444" icon={<Target size={16} />}     sub={`per closed deal`} />
           <StatCard label="Revenue Won"        value={fmt$(wonValue)}                 color="#0d9488" icon={<DollarSign size={16} />} />
           {roiData?.hidden ? (
@@ -206,7 +221,7 @@ function FunnelView({ opps, adSpend, adSpendSource, dispositions, roiData }: {
                 <div className="flex items-center justify-between mb-1 text-sm">
                   <span className="font-medium">{step.label}</span>
                   <div className="flex items-center gap-3">
-                    <span className="font-bold" style={{ color: step.color }}>{step.count}</span>
+                    <span className="font-bold" style={{ color: step.color }}>{Math.round(step.count)}</span>
                     {step.pctOf !== null && (
                       <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: `${step.color}18`, color: step.color }}>
                         {pct(step.count, step.pctOf!)}
@@ -1073,7 +1088,7 @@ export default function SalesPage() {
       </nav>
 
       <div className="px-6 py-6">
-        {view === 'funnel'   && <FunnelView opps={opps} adSpend={adSpend} adSpendSource={adSpendSource} dispositions={dispositions} roiData={roiData} />}
+        {view === 'funnel'   && <FunnelView opps={opps} adSpend={adSpend} adSpendSource={adSpendSource} roiData={roiData} />}
         {view === 'weekly'   && <WeeklyView opps={opps} dispositions={dispositions} />}
         {view === 'adhealth' && <AdHealthView closedDeals={wonOpps.length} />}
         {view === 'kanban'   && <KanbanView opps={opps} dispositions={dispositions} />}
