@@ -9,14 +9,18 @@ const PIPELINE_ID = '11VwMme2JncYTm2Kq6ky';
 
 async function fetchAllOpps() {
   const opps: any[] = [];
-  let startAfterId: string | null = null;
+  let startAfter: string | undefined;
+  let startAfterId: string | undefined;
 
   while (true) {
     const url = new URL('https://services.leadconnectorhq.com/opportunities/search');
     url.searchParams.set('location_id', LOCATION_ID);
     url.searchParams.set('pipeline_id', PIPELINE_ID);
     url.searchParams.set('limit', '100');
-    if (startAfterId) url.searchParams.set('startAfterId', startAfterId);
+    if (startAfter) {
+      url.searchParams.set('startAfter', startAfter);
+      url.searchParams.set('startAfterId', startAfterId!);
+    }
 
     const res = await fetch(url.toString(), {
       headers: {
@@ -28,6 +32,7 @@ async function fetchAllOpps() {
     const data = await res.json();
     opps.push(...(data.opportunities ?? []));
     if (!data.meta?.nextPageUrl || data.opportunities?.length < 100) break;
+    startAfter = data.meta.startAfter;
     startAfterId = data.meta.startAfterId;
   }
 

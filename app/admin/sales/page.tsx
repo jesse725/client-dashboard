@@ -120,8 +120,10 @@ function FunnelView({ opps, adSpend, adSpendSource, roiData }: {
   const couldntClose   = countByStage("Couldn't Close Follow Up");
   const strategyBooked = countByStage('Strategy Call Booked');
 
-  const won = closedCount + depositCount;
-  const wonValue = opps.filter(oppClosed).reduce((s, o) => s + (o.monetaryValue || 0), 0);
+  // Closed is its own stage, distinct from Deposit — matches how Shown/Booked
+  // below already treat "closed" and "deposit" as separate additive terms.
+  const won = closedCount;
+  const wonValue = opps.filter(o => STAGE_MAP[o.stageId]?.name === 'Closed').reduce((s, o) => s + (o.monetaryValue || 0), 0);
 
   // Shown = calls that actually happened: closed, deposit, couldn't-close-followup, or lost after the call.
   const shown = closedCount + depositCount + couldntClose + lostCount;
