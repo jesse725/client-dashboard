@@ -105,6 +105,7 @@ function StatCard({ label, value, sub, color, icon }: {
 // ── Funnel View ───────────────────────────────────────────────────────────────
 function FunnelView({ opps, adSpend, adSpendSource, roiData }: {
   opps: Opp[]; adSpend: number; adSpendSource: 'meta' | 'manual';
+  roiData: { hidden: boolean; totalMRR?: number; totalLTV?: number; activeClients?: number; avgMonthlyRetainer?: number } | null;
 }) {
   const total = opps.length;
 
@@ -198,8 +199,10 @@ function FunnelView({ opps, adSpend, adSpendSource, roiData }: {
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
                 What every dollar of ad spend has bought so far, based on current MRR × months each client has been with us.
               </p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <StatCard label="Active Clients" value={String(roiData.activeClients ?? 0)} color="#6c63ff" icon={<Users size={16} />} />
                 <StatCard label="Total MRR"      value={fmt$(roiData.totalMRR ?? 0)}        color="var(--green)" icon={<DollarSign size={16} />} />
+                <StatCard label="Avg Monthly Retainer" value={fmt$(roiData.avgMonthlyRetainer ?? 0)} color="#0d9488" icon={<DollarSign size={16} />} sub="per active client" />
                 <StatCard label="Total LTV So Far" value={fmt$(roiData.totalLTV ?? 0)}      color="var(--accent)" icon={<TrendingUp size={16} />} sub="revenue collected to date" />
                 <StatCard label="Profit vs. Ad Spend" value={profit != null ? fmt$(profit) : '—'} color={profit != null && profit >= 0 ? 'var(--green)' : 'var(--red)'} icon={<DollarSign size={16} />} />
               </div>
