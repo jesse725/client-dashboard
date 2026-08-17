@@ -24,6 +24,7 @@ export async function GET() {
 
   const active = clients.filter(c => c.client_status !== 'Churned');
   const totalMRR = active.reduce((s, c) => s + (c.retainer_price || 0), 0);
+  const avgMonthlyRetainer = active.length > 0 ? totalMRR / active.length : 0;
 
   const monthsWorked = (startDate: string) => {
     const start = new Date(startDate);
@@ -38,5 +39,6 @@ export async function GET() {
     totalClients: clients.length,
     totalMRR,
     totalLTV,
+    avgMonthlyRetainer,
   });
 }
