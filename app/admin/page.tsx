@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, Plus, X, RefreshCw, CheckCircle, AlertCircle,
   Clock, Settings2, Key, Users, ChevronDown, FileInput, Copy, ExternalLink, BarChart2, TrendingUp,
-  CreditCard,
+  CreditCard, DollarSign,
 } from 'lucide-react';
 import StageMappingModal from '@/components/StageMappingModal';
 
@@ -184,6 +184,11 @@ export default function AdminPage() {
           <Link href="/admin/sales" className="btn-ghost text-sm flex items-center gap-2">
             <TrendingUp size={14} /> Sales Tracker
           </Link>
+          {user?.canViewFinancials && (
+            <Link href="/admin/income" className="btn-ghost text-sm flex items-center gap-2">
+              <DollarSign size={14} /> Income
+            </Link>
+          )}
           <Link href="/admin/onboard" className="btn-primary text-sm flex items-center gap-2">
             <Plus size={14} /> Onboard Client
           </Link>

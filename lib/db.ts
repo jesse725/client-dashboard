@@ -229,6 +229,40 @@ function initSchema(db: Database.Database) {
     );
   `);
 
+  // Income & Earnings tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS startup_funds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      allocated REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS expense_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('subscription','payroll','other')),
+      monthly_amount REAL NOT NULL DEFAULT 0,
+      next_review_date TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS expense_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('other','startup_fund')),
+      fund_id INTEGER REFERENCES startup_funds(id) ON DELETE SET NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      date TEXT NOT NULL DEFAULT (date('now')),
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  seedIncomeData(db);
+
   // Seed agency GHL settings
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_location_id', 'NqZup9jK9NOBs8GDIyuX')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('agency_ghl_pipeline_id', 'hDObd2e6pmi108UBHi15')").run();
@@ -259,5 +293,36 @@ function initSchema(db: Database.Database) {
     db.prepare('UPDATE users SET password_hash = ?, role = ?, name = ? WHERE email = ?').run(
       primaryHash, 'admin', 'Jesse', 'jesse@merovamedia.com'
     );
+  }
+}
+
+// One-time seed from the Merova Media Income Tracker spreadsheet (cycle start Jul-2026).
+// Only runs if the tables are still empty, so it never overwrites real edits.
+function seedIncomeData(db: Database.Database) {
+  const fundCount = (db.prepare('SELECT COUNT(*) AS c FROM startup_funds').get() as any).c;
+  if (fundCount === 0) {
+    db.prepare("INSERT INTO startup_funds (name, allocated, notes) VALUES ('Course Fund', 2500, 'One-time course purchase, seeded from startup capital')").run();
+    db.prepare("INSERT INTO startup_funds (name, allocated, notes) VALUES ('Ad Spend Fund', 5000, 'Draw down as ad spend is logged against this fund')").run();
+
+    const courseFund = db.prepare("SELECT id FROM startup_funds WHERE name = 'Course Fund'").get() as any;
+    db.prepare(
+      "INSERT INTO expense_entries (name, category, fund_id, amount, date, notes) VALUES ('Course', 'startup_fund', ?, 2500, '2026-07-01', 'Seeded from spreadsheet')"
+    ).run(courseFund.id);
+  }
+
+  const itemCount = (db.prepare('SELECT COUNT(*) AS c FROM expense_items').get() as any).c;
+  if (itemCount === 0) {
+    const subscriptions: [string, number][] = [
+      ['GHL Base Sub', 297], ['ChatGPT', 25], ['Google Workspace', 25], ['Canva', 21],
+      ['Slack', 12], ['GHL Messaging & Phone', 60], ['Loom', 22], ['Claude', 25],
+      ['Kling', 30], ['Notion', 12], ['Teleprompter', 19],
+    ];
+    const payroll: [string, number][] = [
+      ['B2B 1 Editor (Paki)', 220], ['B2B 2 Editor', 250], ['B2C Creator', 185],
+      ['Ops Guy', 600], ['Media Buyer', 400], ['CSM', 0],
+    ];
+    const insert = db.prepare("INSERT INTO expense_items (name, category, monthly_amount) VALUES (?, ?, ?)");
+    for (const [name, amount] of subscriptions) insert.run(name, 'subscription', amount);
+    for (const [name, amount] of payroll) insert.run(name, 'payroll', amount);
   }
 }

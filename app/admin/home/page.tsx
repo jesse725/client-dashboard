@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BarChart2, TrendingUp, Plus, Settings2 } from 'lucide-react';
+import { BarChart2, TrendingUp, Plus, Settings2, DollarSign } from 'lucide-react';
 
 export default function AdminHomePage() {
   const { data: session, status } = useSession();
@@ -45,6 +45,13 @@ export default function AdminHomePage() {
       icon: <Plus size={22} />,
       color: 'var(--yellow)',
     },
+    ...(user?.canViewFinancials ? [{
+      href: '/admin/income',
+      title: 'Income & Earnings',
+      desc: 'Live income statement, monthly P&L, subscriptions & payroll',
+      icon: <DollarSign size={22} />,
+      color: '#0d9488',
+    }] : []),
   ];
 
   return (

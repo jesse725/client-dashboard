@@ -65,6 +65,57 @@ export async function fetchWhopCompanyId(apiKey: string): Promise<string> {
   return data.id as string;
 }
 
+export interface WhopPayment {
+  id: string;
+  amount: number; // dollars
+  status: string;
+  createdAt: string; // ISO 8601
+  email: string | null;
+}
+
+// Real transaction ledger — used for actual revenue-received-by-month, unlike
+// listWhopMemberships() which only reports current subscription status.
+// Amount/status field names are defensively multi-checked since this is the
+// first place in the app calling Whop's /payments endpoint — same pattern the
+// webhook handler already uses for a single payment payload.
+export async function listWhopPayments(apiKey: string, companyId: string): Promise<WhopPayment[]> {
+  const results: WhopPayment[] = [];
+  let after: string | undefined;
+  const trimmedKey = apiKey.trim();
+  const trimmedCompanyId = companyId.trim();
+
+  while (true) {
+    const url = new URL(`${WHOP_API_BASE}/payments`);
+    url.searchParams.set('company_id', trimmedCompanyId);
+    url.searchParams.set('first', '100');
+    if (after) url.searchParams.set('after', after);
+
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${trimmedKey}` } });
+    if (!res.ok) throw new Error(`Whop API ${res.status}: ${await res.text()}`);
+    const json = await res.json();
+
+    for (const p of json.data ?? []) {
+      const rawAmount = p.final_amount ?? p.total ?? p.settlement_amount ?? p.subtotal ?? 0;
+      const rawCreated = p.created_at ?? p.paid_at ?? p.createdAt;
+      const createdAt = typeof rawCreated === 'number'
+        ? new Date(rawCreated < 2e10 ? rawCreated * 1000 : rawCreated).toISOString()
+        : rawCreated ? new Date(rawCreated).toISOString() : new Date().toISOString();
+      results.push({
+        id: p.id,
+        amount: Number(rawAmount) || 0,
+        status: p.status ?? 'unknown',
+        createdAt,
+        email: p.user?.email ?? p.member?.email ?? null,
+      });
+    }
+
+    if (!json.page_info?.has_next_page) break;
+    after = json.page_info.end_cursor;
+  }
+
+  return results;
+}
+
 export async function listWhopMemberships(apiKey: string, companyId: string): Promise<WhopMembershipListItem[]> {
   const results: WhopMembershipListItem[] = [];
   let after: string | undefined;
