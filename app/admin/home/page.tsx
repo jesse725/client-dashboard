@@ -47,7 +47,7 @@ export default function AdminHomePage() {
     },
     ...(user?.canViewFinancials ? [{
       href: '/admin/income',
-      title: 'Income & Earnings',
+      title: 'Income Statement',
       desc: 'Live income statement, monthly P&L, subscriptions & payroll',
       icon: <DollarSign size={22} />,
       color: '#0d9488',

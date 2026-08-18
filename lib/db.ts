@@ -259,6 +259,18 @@ function initSchema(db: Database.Database) {
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Per-month override for a recurring item's amount. A month with no row here
+    -- carries forward the most recent prior month's value (or the item's base
+    -- monthly_amount if it's never been set) — editing one month never touches
+    -- another.
+    CREATE TABLE IF NOT EXISTS expense_monthly_values (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES expense_items(id) ON DELETE CASCADE,
+      month TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      UNIQUE(item_id, month)
+    );
   `);
 
   seedIncomeData(db);

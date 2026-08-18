@@ -127,8 +127,40 @@ export function getActiveItems(category?: 'subscription' | 'payroll' | 'other'):
   return db.prepare('SELECT * FROM expense_items WHERE active = 1 ORDER BY category, name').all() as ExpenseItem[];
 }
 
-export function sumActiveItems(category: 'subscription' | 'payroll' | 'other'): number {
-  return getActiveItems(category).reduce((s, i) => s + i.monthly_amount, 0);
+export interface ResolvedItem extends ExpenseItem {
+  amount: number; // effective amount for the requested month
+  isOverride: boolean; // true if this exact month has an explicit entered value
+}
+
+// A month with no explicit entry carries forward the most recent prior month's
+// value; a month before any entry exists falls back to the item's base rate.
+// Editing one month's amount never touches any other month.
+function resolveItemAmountForMonth(itemId: number, month: string, baseAmount: number): { amount: number; isOverride: boolean } {
+  const db = getDb();
+  const exact = db.prepare('SELECT amount FROM expense_monthly_values WHERE item_id = ? AND month = ?').get(itemId, month) as any;
+  if (exact) return { amount: exact.amount, isOverride: true };
+  const prior = db.prepare('SELECT amount FROM expense_monthly_values WHERE item_id = ? AND month < ? ORDER BY month DESC LIMIT 1').get(itemId, month) as any;
+  if (prior) return { amount: prior.amount, isOverride: false };
+  return { amount: baseAmount, isOverride: false };
+}
+
+export function getResolvedItems(month: string, category?: 'subscription' | 'payroll' | 'other'): ResolvedItem[] {
+  return getActiveItems(category).map(item => {
+    const { amount, isOverride } = resolveItemAmountForMonth(item.id, month, item.monthly_amount);
+    return { ...item, amount, isOverride };
+  });
+}
+
+export function sumResolvedItems(month: string, category: 'subscription' | 'payroll' | 'other'): number {
+  return getResolvedItems(month, category).reduce((s, i) => s + i.amount, 0);
+}
+
+export function setItemMonthValue(itemId: number, month: string, amount: number) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO expense_monthly_values (item_id, month, amount) VALUES (?, ?, ?)
+    ON CONFLICT(item_id, month) DO UPDATE SET amount = excluded.amount
+  `).run(itemId, month, amount);
 }
 
 export interface ExpenseEntry {

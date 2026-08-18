@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import {
   requireFinancialAccess, listCycleMonths, monthBounds, computeMonthPnL,
-  getWhopRevenueByMonth, getMetaSpendByMonth, sumActiveItems,
+  getWhopRevenueByMonth, getMetaSpendByMonth, sumResolvedItems,
 } from '@/lib/income';
 
 export async function GET() {
@@ -19,12 +19,13 @@ export async function GET() {
     getMetaSpendByMonth(since, until),
   ]);
 
-  const recurringSubscriptions = sumActiveItems('subscription');
-  const employeeCosts = sumActiveItems('payroll');
-
-  const monthly = months.map(month =>
-    computeMonthPnL(month, revenueByMonth[month] ?? 0, adSpendByMonth[month] ?? 0, recurringSubscriptions, employeeCosts)
-  );
+  // Subscriptions/payroll are resolved per month (carry-forward from the most
+  // recent edit), so each month in the trend can differ if it was edited.
+  const monthly = months.map(month => {
+    const recurringSubscriptions = sumResolvedItems(month, 'subscription');
+    const employeeCosts = sumResolvedItems(month, 'payroll');
+    return computeMonthPnL(month, revenueByMonth[month] ?? 0, adSpendByMonth[month] ?? 0, recurringSubscriptions, employeeCosts);
+  });
 
   const ytdRevenue = monthly.reduce((s, m) => s + m.revenue, 0);
   const ytdAdSpend = monthly.reduce((s, m) => s + m.adSpend, 0);

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   requireFinancialAccess, monthBounds, computeMonthPnL, monthLabel,
-  getWhopRevenueByMonth, getMetaSpendByMonth, getActiveItems, getEntriesForMonth, listCycleMonths,
+  getWhopRevenueByMonth, getMetaSpendByMonth, getResolvedItems, sumResolvedItems, getEntriesForMonth, listCycleMonths,
 } from '@/lib/income';
 
 export async function GET(req: Request) {
@@ -18,18 +18,19 @@ export async function GET(req: Request) {
     getMetaSpendByMonth(since, until),
   ]);
 
-  const subscriptions = getActiveItems('subscription');
-  const payroll = getActiveItems('payroll');
-  const recurringSubscriptions = subscriptions.reduce((s, i) => s + i.monthly_amount, 0);
-  const employeeCosts = payroll.reduce((s, i) => s + i.monthly_amount, 0);
+  const subscriptions = getResolvedItems(month, 'subscription');
+  const payroll = getResolvedItems(month, 'payroll');
+  const recurringSubscriptions = subscriptions.reduce((s, i) => s + i.amount, 0);
+  const employeeCosts = payroll.reduce((s, i) => s + i.amount, 0);
 
   const pnl = computeMonthPnL(month, revenueByMonth[month] ?? 0, adSpendByMonth[month] ?? 0, recurringSubscriptions, employeeCosts);
 
-  // Cumulative profit from cycle start through the selected month
+  // Cumulative profit from cycle start through the selected month — each prior
+  // month uses its own resolved subscription/payroll amounts, not this month's.
   let cumulativeProfit = 0;
   for (const m of months) {
     if (m > month) break;
-    const p = computeMonthPnL(m, revenueByMonth[m] ?? 0, adSpendByMonth[m] ?? 0, recurringSubscriptions, employeeCosts);
+    const p = computeMonthPnL(m, revenueByMonth[m] ?? 0, adSpendByMonth[m] ?? 0, sumResolvedItems(m, 'subscription'), sumResolvedItems(m, 'payroll'));
     cumulativeProfit += p.netProfit;
   }
 
