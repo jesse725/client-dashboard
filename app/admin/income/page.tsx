@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Layers,
-  Calendar, Plus, Trash2, Users, Wallet, LayoutDashboard, CalendarDays, ListChecks,
+  Plus, Trash2, Users, Wallet, LayoutDashboard, ListChecks, ChevronDown, ChevronRight, Scale,
 } from 'lucide-react';
 
 function fmt$(n: number) {
@@ -46,33 +46,56 @@ function Warnings({ warnings }: { warnings: { source: string; message: string }[
   );
 }
 
-// ── Dashboard View ───────────────────────────────────────────────────────────
-function DashboardView() {
+function Row({ label, value, bold, muted, color, sub }: { label: string; value: string; bold?: boolean; muted?: boolean; color?: string; sub?: string }) {
+  return (
+    <div className="px-4 py-2.5 flex items-center justify-between">
+      <div>
+        <span className={bold ? 'font-semibold' : ''} style={{ color: muted ? 'var(--text-muted)' : undefined }}>{label}</span>
+        {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+      </div>
+      <span className={bold ? 'font-bold' : ''} style={{ color: color ?? (muted ? 'var(--text-muted)' : undefined) }}>{value}</span>
+    </div>
+  );
+}
+
+// ── Overview: cumulative header + expandable month cards, grouped by year ──────
+function OverviewView() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     fetch('/api/admin/income/summary').then(r => r.json()).then(d => { setData(d); setLoading(false); });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>;
   if (!data || data.error) return <p className="text-sm" style={{ color: 'var(--red)' }}>{data?.error || 'Failed to load'}</p>;
 
   const { months, ytd, startupFunds, warnings } = data;
 
+  // Group months by year — a flat list today, ready to fold into per-year
+  // cards once there's more than one year of history.
+  const byYear: Record<string, any[]> = {};
+  for (const m of months) {
+    const y = m.month.slice(0, 4);
+    (byYear[y] ??= []).push(m);
+  }
+  const years = Object.keys(byYear).sort().reverse();
+
   return (
     <div className="space-y-6">
       <Warnings warnings={warnings} />
 
       <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Income Statement (Cycle-to-Date, USD)</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Cumulative (All-Time, USD)</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard label="Total Revenue" value={fmt$(ytd.revenue)} color="#6c63ff" icon={<DollarSign size={16} />} />
           <StatCard label="Total Ad Spend" value={fmt$(ytd.adSpend)} color="#f59e0b" icon={<TrendingDown size={16} />} />
-          <StatCard label="Gross Profit" value={fmt$(ytd.grossProfit)} color="#0891b2" icon={<TrendingUp size={16} />} />
-          <StatCard label="Net Profit" value={fmt$(ytd.netProfit)} color={ytd.netProfit >= 0 ? 'var(--green)' : 'var(--red)'} icon={<Wallet size={16} />} />
-          <StatCard label="Avg Profit Margin" value={ytd.avgProfitMarginPct != null ? pct(ytd.avgProfitMarginPct) : '—'} color="#16a34a" icon={<Layers size={16} />} />
-          <StatCard label="Avg ROAS" value={ytd.avgRoas != null ? `${ytd.avgRoas.toFixed(2)}x` : '—'} color="#0d9488" icon={<TrendingUp size={16} />} />
+          <StatCard label="Cumulative Profit" value={fmt$(ytd.netProfit)} color={ytd.netProfit >= 0 ? 'var(--green)' : 'var(--red)'} icon={<Wallet size={16} />} />
+          <StatCard label="Overall Margin" value={ytd.overallMarginPct != null ? pct(ytd.overallMarginPct) : '—'} color="#16a34a" icon={<Layers size={16} />} />
+          <StatCard label="Profitability Ratio" value={ytd.profitabilityRatio != null ? `${ytd.profitabilityRatio.toFixed(2)}x` : '—'} color="#0d9488" icon={<Scale size={16} />} sub="revenue per $1 of total cost" />
+          <StatCard label="Avg ROAS" value={ytd.avgRoas != null ? `${ytd.avgRoas.toFixed(2)}x` : '—'} color="#8b5cf6" icon={<TrendingUp size={16} />} />
         </div>
       </div>
 
@@ -100,151 +123,130 @@ function DashboardView() {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
-        <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-          <p className="font-semibold text-sm">Monthly Trend</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th className="text-left px-4 py-2 font-medium" style={{ color: 'var(--text-muted)' }}>Metric</th>
-                {months.map((m: any) => (
-                  <th key={m.month} className="text-right px-4 py-2 font-medium whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{m.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { key: 'revenue', label: 'Revenue', fmt: fmt$ },
-                { key: 'adSpend', label: 'Ad Spend', fmt: fmt$ },
-                { key: 'grossProfit', label: 'Gross Profit', fmt: fmt$ },
-                { key: 'totalOperatingExpenses', label: 'Total Expenses', fmt: fmt$ },
-                { key: 'netProfit', label: 'Net Profit', fmt: fmt$ },
-                { key: 'profitMarginPct', label: 'Profit Margin', fmt: pct },
-                { key: 'roas', label: 'ROAS', fmt: (v: number | null) => v != null ? `${v.toFixed(2)}x` : '—' },
-              ].map(row => (
-                <tr key={row.key} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td className="px-4 py-2 font-medium">{row.label}</td>
-                  {months.map((m: any) => (
-                    <td key={m.month} className="text-right px-4 py-2 whitespace-nowrap">{row.fmt(m[row.key])}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Months</h3>
+        {years.length > 1 ? (
+          <div className="space-y-3">
+            {years.map(y => <YearGroup key={y} year={y} months={byYear[y]} onEntryChange={load} />)}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {months.slice().reverse().map((m: any) => <MonthCard key={m.month} month={m} onEntryChange={load} />)}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// ── Monthly View ─────────────────────────────────────────────────────────────
-function MonthlyView() {
-  const [month, setMonth] = useState<string | null>(null);
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [showAddEntry, setShowAddEntry] = useState<'other' | 'startup_fund' | null>(null);
-
-  const load = useCallback((m?: string) => {
-    setLoading(true);
-    const url = m ? `/api/admin/income/monthly?month=${m}` : '/api/admin/income/monthly';
-    fetch(url).then(r => r.json()).then(d => { setData(d); setMonth(d.month); setLoading(false); });
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  if (loading || !data) return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>;
-  if (data.error) return <p className="text-sm" style={{ color: 'var(--red)' }}>{data.error}</p>;
-
-  const { pnl, cumulativeProfit, otherExpenseEntries, startupFundEntries, availableMonths, warnings, subscriptions, payroll } = data;
-
-  const setItemMonth = async (itemId: number, amount: number) => {
-    await fetch('/api/admin/income/items/monthly-value', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_id: itemId, month, amount }),
-    });
-    load(month!);
-  };
+function YearGroup({ year, months, onEntryChange }: { year: string; months: any[]; onEntryChange: () => void }) {
+  const [open, setOpen] = useState(year === new Date().getFullYear().toString());
+  const yearRevenue = months.reduce((s, m) => s + m.revenue, 0);
+  const yearNetProfit = months.reduce((s, m) => s + m.netProfit, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Calendar size={16} style={{ color: 'var(--text-muted)' }} />
-        <select
-          value={month ?? ''}
-          onChange={e => load(e.target.value)}
-          className="input text-sm w-40"
-        >
-          {availableMonths.map((m: string) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-      </div>
-
-      <Warnings warnings={warnings} />
-
-      <div className="card overflow-hidden max-w-2xl">
-        <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-          <p className="font-semibold text-sm">{data.label} — Income Statement</p>
+    <div className="card overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="w-full px-4 py-3 flex items-center justify-between text-left" style={{ background: 'var(--surface-2)' }}>
+        <div className="flex items-center gap-2">
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          <span className="font-semibold">{year}</span>
         </div>
-        <div className="divide-y text-sm" style={{ borderColor: 'var(--border)' }}>
-          <Row label="Revenue" value={fmt$(pnl.revenue)} bold sub="net, from Whop — Whop's own fee already deducted" />
-          <Row label="Ad Spend (COGS)" value={`(${fmt$(pnl.adSpend)})`} muted />
-          <Row label="Gross Profit" value={fmt$(pnl.grossProfit)} bold color="#0891b2" />
-          <Row label="Gross Margin" value={pct(pnl.grossMarginPct)} muted />
-          <Row label="Recurring Subscriptions" value={`(${fmt$(pnl.recurringSubscriptions)})`} muted sub="editable below" />
-          <Row label="Employee Costs" value={`(${fmt$(pnl.employeeCosts)})`} muted sub="editable below" />
-          <Row label="Other Operating Expenses" value={`(${fmt$(pnl.otherExpenses)})`} muted />
-          <Row label="Total Operating Expenses" value={fmt$(pnl.totalOperatingExpenses)} bold />
-          <Row label="Net Profit" value={fmt$(pnl.netProfit)} bold color={pnl.netProfit >= 0 ? 'var(--green)' : 'var(--red)'} />
-          <Row label="Profit Margin" value={pct(pnl.profitMarginPct)} muted />
-          <Row label="ROAS" value={pnl.roas != null ? `${pnl.roas.toFixed(2)}x` : '—'} muted />
-          <Row label="Startup Fund Draws" value={fmt$(pnl.startupFundDraws)} muted sub="excluded from Net Profit — one-time seed capital" />
-          <Row label="Cumulative Profit (cycle-to-date)" value={fmt$(cumulativeProfit)} bold color="var(--accent)" />
+        <div className="flex items-center gap-4 text-sm">
+          <span style={{ color: 'var(--text-muted)' }}>{fmt$(yearRevenue)} revenue</span>
+          <span className="font-semibold" style={{ color: yearNetProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt$(yearNetProfit)} net</span>
         </div>
-      </div>
-
-      <MonthlyItemSection title="Subscriptions" items={subscriptions} onSave={setItemMonth} />
-      <MonthlyItemSection title="Payroll" items={payroll} onSave={setItemMonth} />
-
-      <EntrySection
-        title="Other Operating Expenses"
-        entries={otherExpenseEntries}
-        category="other"
-        month={month!}
-        onAdd={() => setShowAddEntry('other')}
-        onChange={() => load(month!)}
-      />
-      <EntrySection
-        title="Startup Fund Draws"
-        entries={startupFundEntries}
-        category="startup_fund"
-        month={month!}
-        onAdd={() => setShowAddEntry('startup_fund')}
-        onChange={() => load(month!)}
-      />
-
-      {showAddEntry && (
-        <AddEntryModal
-          category={showAddEntry}
-          month={month!}
-          onClose={() => setShowAddEntry(null)}
-          onSaved={() => { setShowAddEntry(null); load(month!); }}
-        />
+      </button>
+      {open && (
+        <div className="p-3 space-y-2" style={{ background: 'var(--background)' }}>
+          {months.slice().reverse().map(m => <MonthCard key={m.month} month={m} onEntryChange={onEntryChange} />)}
+        </div>
       )}
     </div>
   );
 }
 
-function Row({ label, value, bold, muted, color, sub }: { label: string; value: string; bold?: boolean; muted?: boolean; color?: string; sub?: string }) {
+function MonthCard({ month, onEntryChange }: { month: any; onEntryChange: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [detail, setDetail] = useState<any>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [showAddEntry, setShowAddEntry] = useState<'other' | 'startup_fund' | null>(null);
+
+  const loadDetail = useCallback(() => {
+    setLoadingDetail(true);
+    fetch(`/api/admin/income/monthly?month=${month.month}`).then(r => r.json()).then(d => { setDetail(d); setLoadingDetail(false); });
+  }, [month.month]);
+
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !detail) loadDetail();
+  };
+
+  const setItemMonth = async (itemId: number, amount: number) => {
+    await fetch('/api/admin/income/items/monthly-value', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemId, month: month.month, amount }),
+    });
+    loadDetail();
+    onEntryChange();
+  };
+
   return (
-    <div className="px-4 py-2.5 flex items-center justify-between">
-      <div>
-        <span className={bold ? 'font-semibold' : ''} style={{ color: muted ? 'var(--text-muted)' : undefined }}>{label}</span>
-        {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
-      </div>
-      <span className={bold ? 'font-bold' : ''} style={{ color: color ?? (muted ? 'var(--text-muted)' : undefined) }}>{value}</span>
+    <div className="card overflow-hidden">
+      <button onClick={toggle} className="w-full px-4 py-3 flex items-center justify-between text-left hover:opacity-90 transition-opacity">
+        <div className="flex items-center gap-2">
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <span className="font-semibold text-sm">{month.label}</span>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+          <span style={{ color: 'var(--text-muted)' }}>{fmt$(month.revenue)} rev</span>
+          <span className="font-semibold w-20 text-right" style={{ color: month.netProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt$(month.netProfit)}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div style={{ borderTop: '1px solid var(--border)' }}>
+          {loadingDetail || !detail ? (
+            <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>Loading…</p>
+          ) : (
+            <div className="p-3 space-y-3">
+              <div className="divide-y text-sm" style={{ borderColor: 'var(--border)' }}>
+                <Row label="Revenue" value={fmt$(month.revenue)} bold sub="net, from Whop — Whop's own fee already deducted" />
+                <Row label="Ad Spend (COGS)" value={`(${fmt$(month.adSpend)})`} muted />
+                <Row label="Gross Profit" value={fmt$(month.grossProfit)} bold color="#0891b2" />
+                <Row label="Gross Margin" value={pct(month.grossMarginPct)} muted />
+                <Row label="Recurring Subscriptions" value={`(${fmt$(month.recurringSubscriptions)})`} muted sub="editable below" />
+                <Row label="Employee Costs" value={`(${fmt$(month.employeeCosts)})`} muted sub="editable below" />
+                <Row label="Other Operating Expenses" value={`(${fmt$(month.otherExpenses)})`} muted />
+                <Row label="Total Operating Expenses" value={fmt$(month.totalOperatingExpenses)} bold />
+                <Row label="Net Profit" value={fmt$(month.netProfit)} bold color={month.netProfit >= 0 ? 'var(--green)' : 'var(--red)'} />
+                <Row label="Profit Margin" value={pct(month.profitMarginPct)} muted />
+                <Row label="ROAS" value={month.roas != null ? `${month.roas.toFixed(2)}x` : '—'} muted />
+                <Row label="Startup Fund Draws" value={fmt$(month.startupFundDraws)} muted sub="excluded from Net Profit — one-time seed capital" />
+              </div>
+
+              <MonthlyItemSection title="Subscriptions" items={detail.subscriptions} onSave={setItemMonth} />
+              <MonthlyItemSection title="Payroll" items={detail.payroll} onSave={setItemMonth} />
+              <EntrySection
+                title="Other Operating Expenses" entries={detail.otherExpenseEntries} category="other" month={month.month}
+                onAdd={() => setShowAddEntry('other')} onChange={() => { loadDetail(); onEntryChange(); }}
+              />
+              <EntrySection
+                title="Startup Fund Draws" entries={detail.startupFundEntries} category="startup_fund" month={month.month}
+                onAdd={() => setShowAddEntry('startup_fund')} onChange={() => { loadDetail(); onEntryChange(); }}
+              />
+
+              {showAddEntry && (
+                <AddEntryModal
+                  category={showAddEntry} month={month.month}
+                  onClose={() => setShowAddEntry(null)}
+                  onSaved={() => { setShowAddEntry(null); loadDetail(); onEntryChange(); }}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -254,7 +256,7 @@ function MonthlyItemSection({ title, items, onSave }: {
 }) {
   const total = items.reduce((s, i) => s + i.amount, 0);
   return (
-    <div className="card overflow-hidden max-w-2xl">
+    <div className="card overflow-hidden">
       <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
         <p className="font-semibold text-sm">{title}</p>
         <span className="text-sm font-semibold">{fmt$(total)}</span>
@@ -299,7 +301,7 @@ function EntrySection({ title, entries, category, month, onAdd, onChange }: {
     onChange();
   };
   return (
-    <div className="card overflow-hidden max-w-2xl">
+    <div className="card overflow-hidden">
       <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
         <p className="font-semibold text-sm">{title}</p>
         <button onClick={onAdd} className="btn-ghost text-xs flex items-center gap-1"><Plus size={12} /> Add</button>
@@ -382,7 +384,8 @@ function AddEntryModal({ category, month, onClose, onSaved }: {
 
 // ── Subscriptions View ───────────────────────────────────────────────────────
 // Manages the roster (add/remove) — actual month-by-month amounts are edited
-// in the Monthly tab. Amounts shown here reflect the current calendar month.
+// by expanding a month card in Overview. Amounts shown here reflect the
+// current calendar month.
 function SubscriptionsView() {
   const [monthly, setMonthly] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -409,7 +412,7 @@ function SubscriptionsView() {
   return (
     <div className="space-y-6">
       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        Amounts below are for {monthly.label} (current month) — to change what a specific past or future month spent, edit it in the Monthly tab.
+        Amounts below are for {monthly.label} (current month) — to change what a specific past or future month spent, expand it in Overview.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <StatCard label="Software Subscriptions" value={fmt$(subsTotal)} sub={`${subscriptions.length} active · ${fmt$(subsTotal * 12)}/yr`} color="#0d9488" icon={<Layers size={16} />} />
@@ -493,7 +496,7 @@ export default function IncomePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const user = session?.user as any;
-  const [tab, setTab] = useState<'dashboard' | 'monthly' | 'subscriptions'>('dashboard');
+  const [tab, setTab] = useState<'overview' | 'subscriptions'>('overview');
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -509,8 +512,7 @@ export default function IncomePage() {
   }
 
   const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={14} /> },
-    { id: 'monthly', label: 'Monthly', icon: <CalendarDays size={14} /> },
+    { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={14} /> },
     { id: 'subscriptions', label: 'Subscriptions', icon: <ListChecks size={14} /> },
   ] as const;
 
@@ -543,8 +545,7 @@ export default function IncomePage() {
       </nav>
 
       <div className="px-6 py-6">
-        {tab === 'dashboard' && <DashboardView />}
-        {tab === 'monthly' && <MonthlyView />}
+        {tab === 'overview' && <OverviewView />}
         {tab === 'subscriptions' && <SubscriptionsView />}
       </div>
     </div>

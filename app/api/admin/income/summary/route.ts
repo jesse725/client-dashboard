@@ -31,12 +31,21 @@ export async function GET() {
   const ytdAdSpend = monthly.reduce((s, m) => s + m.adSpend, 0);
   const ytdGrossProfit = monthly.reduce((s, m) => s + m.grossProfit, 0);
   const ytdNetProfit = monthly.reduce((s, m) => s + m.netProfit, 0);
+  const ytdOperatingExpenses = monthly.reduce((s, m) => s + m.totalOperatingExpenses, 0);
+  const ytdTotalCosts = ytdAdSpend + ytdOperatingExpenses;
   const monthsWithRevenue = monthly.filter(m => m.revenue > 0);
   const avgProfitMarginPct = monthsWithRevenue.length > 0
     ? monthsWithRevenue.reduce((s, m) => s + m.profitMarginPct, 0) / monthsWithRevenue.length : null;
+  // Overall margin computed from totals directly (not an average of monthly
+  // %s), so one low-revenue month can't skew it — matches how a real income
+  // statement rolls up a period.
+  const overallMarginPct = ytdRevenue > 0 ? (ytdNetProfit / ytdRevenue) * 100 : null;
   const monthsWithSpend = monthly.filter(m => m.adSpend > 0);
   const avgRoas = monthsWithSpend.length > 0
     ? monthsWithSpend.reduce((s, m) => s + (m.roas ?? 0), 0) / monthsWithSpend.length : null;
+  // Dollars earned per dollar spent running the business (ad spend + subs +
+  // payroll + other) — a business-wide analog of ROAS.
+  const profitabilityRatio = ytdTotalCosts > 0 ? ytdRevenue / ytdTotalCosts : null;
 
   const funds = db.prepare('SELECT * FROM startup_funds ORDER BY id').all() as any[];
   const startupFunds = funds.map(f => {
@@ -55,7 +64,8 @@ export async function GET() {
     months: monthly,
     ytd: {
       revenue: ytdRevenue, adSpend: ytdAdSpend, grossProfit: ytdGrossProfit, netProfit: ytdNetProfit,
-      avgProfitMarginPct, avgRoas,
+      totalCosts: ytdTotalCosts,
+      avgProfitMarginPct, overallMarginPct, avgRoas, profitabilityRatio,
     },
     startupFunds,
     warnings,
