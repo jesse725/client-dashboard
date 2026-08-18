@@ -74,6 +74,15 @@ function getMetaConfig(): MetaConfig {
 
 export interface DataWarning { source: 'whop' | 'meta'; message: string }
 
+// Statuses that should never count as revenue — money that was charged but
+// didn't actually stick. Blacklist (not whitelist) on purpose: if Whop's exact
+// "successful" status string is spelled differently than expected, a whitelist
+// would silently zero out real revenue, while this only risks under-filtering.
+const NON_REVENUE_STATUSES = new Set([
+  'refunded', 'failed', 'disputed', 'cancelled', 'canceled', 'void', 'voided',
+  'chargeback', 'chargeback_reversed', 'declined', 'pending', 'incomplete',
+]);
+
 // Fetches every Whop payment once and buckets by calendar month — reused across
 // however many months a caller needs instead of one API round-trip per month.
 export async function getWhopRevenueByMonth(): Promise<{ byMonth: Record<string, number>; warning: DataWarning | null }> {
@@ -85,6 +94,7 @@ export async function getWhopRevenueByMonth(): Promise<{ byMonth: Record<string,
     const payments = await listWhopPayments(apiKey, companyId);
     const byMonth: Record<string, number> = {};
     for (const p of payments) {
+      if (NON_REVENUE_STATUSES.has((p.status ?? '').toLowerCase())) continue;
       const month = p.createdAt.slice(0, 7);
       byMonth[month] = (byMonth[month] ?? 0) + p.amount;
     }
