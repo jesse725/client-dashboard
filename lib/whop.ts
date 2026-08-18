@@ -67,7 +67,8 @@ export async function fetchWhopCompanyId(apiKey: string): Promise<string> {
 
 export interface WhopPayment {
   id: string;
-  amount: number; // dollars
+  amount: number; // net dollars actually settled, after Whop's own platform fee
+  grossAmount: number; // what the customer was charged, before Whop's fee
   status: string;
   createdAt: string; // ISO 8601
   email: string | null;
@@ -75,9 +76,9 @@ export interface WhopPayment {
 
 // Real transaction ledger — used for actual revenue-received-by-month, unlike
 // listWhopMemberships() which only reports current subscription status.
-// Amount/status field names are defensively multi-checked since this is the
-// first place in the app calling Whop's /payments endpoint — same pattern the
-// webhook handler already uses for a single payment payload.
+// `amount` prioritizes amount_after_fees (Whop's own net-of-platform-fee
+// figure) so callers never need to re-derive/estimate the fee themselves —
+// falls back to gross fields only if Whop didn't return a net figure.
 export async function listWhopPayments(apiKey: string, companyId: string): Promise<WhopPayment[]> {
   const results: WhopPayment[] = [];
   let after: string | undefined;
@@ -95,14 +96,16 @@ export async function listWhopPayments(apiKey: string, companyId: string): Promi
     const json = await res.json();
 
     for (const p of json.data ?? []) {
-      const rawAmount = p.final_amount ?? p.total ?? p.settlement_amount ?? p.subtotal ?? 0;
+      const rawGross = p.final_amount ?? p.total ?? p.subtotal ?? 0;
+      const rawNet = p.amount_after_fees ?? p.settlement_amount ?? rawGross;
       const rawCreated = p.created_at ?? p.paid_at ?? p.createdAt;
       const createdAt = typeof rawCreated === 'number'
         ? new Date(rawCreated < 2e10 ? rawCreated * 1000 : rawCreated).toISOString()
         : rawCreated ? new Date(rawCreated).toISOString() : new Date().toISOString();
       results.push({
         id: p.id,
-        amount: Number(rawAmount) || 0,
+        amount: Number(rawNet) || 0,
+        grossAmount: Number(rawGross) || 0,
         status: p.status ?? 'unknown',
         createdAt,
         email: p.user?.email ?? p.member?.email ?? null,

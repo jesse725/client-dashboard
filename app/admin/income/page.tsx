@@ -189,9 +189,7 @@ function MonthlyView() {
           <p className="font-semibold text-sm">{data.label} — Income Statement</p>
         </div>
         <div className="divide-y text-sm" style={{ borderColor: 'var(--border)' }}>
-          <Row label="Revenue" value={fmt$(pnl.revenue)} />
-          <Row label="Whop Fees (3.2%)" value={`(${fmt$(pnl.whopFees)})`} muted />
-          <Row label="Gross Revenue" value={fmt$(pnl.grossRevenue)} bold />
+          <Row label="Revenue" value={fmt$(pnl.revenue)} bold sub="net, from Whop — Whop's own fee already deducted" />
           <Row label="Ad Spend (COGS)" value={`(${fmt$(pnl.adSpend)})`} muted />
           <Row label="Gross Profit" value={fmt$(pnl.grossProfit)} bold color="#0891b2" />
           <Row label="Gross Margin" value={pct(pnl.grossMarginPct)} muted />

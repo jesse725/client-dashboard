@@ -16,7 +16,6 @@ export async function requireFinancialAccess(): Promise<{ ok: true } | { ok: fal
   return { ok: true };
 }
 
-export const WHOP_FEE_RATE = 0.032;
 export const DEFAULT_CYCLE_START = '2026-07-01';
 
 export function getCycleStart(): string {
@@ -187,9 +186,7 @@ export function getEntriesForMonth(month: string, category?: 'other' | 'startup_
 export interface MonthPnL {
   month: string;
   label: string;
-  revenue: number;
-  whopFees: number;
-  grossRevenue: number;
+  revenue: number; // net of Whop's own platform fee — Whop already accounts for it
   adSpend: number;
   grossProfit: number;
   grossMarginPct: number;
@@ -210,11 +207,10 @@ export function computeMonthPnL(
   recurringSubscriptions: number,
   employeeCosts: number
 ): MonthPnL {
-  const whopFees = revenue * WHOP_FEE_RATE;
-  const grossRevenue = revenue - whopFees;
-  const grossProfit = grossRevenue - adSpend;
-  // Margins are against raw Revenue (pre-Whop-fee), not Gross Revenue — matches
-  // the spreadsheet exactly (verified: 10324.86/12650 = 0.8161944664).
+  // Revenue is already net of Whop's platform fee (pulled from Whop's own
+  // amount_after_fees), so no separate fee deduction here — that would double
+  // count it.
+  const grossProfit = revenue - adSpend;
   const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
 
   const startupFundDraws = getEntriesForMonth(month, 'startup_fund').reduce((s, e) => s + e.amount, 0);
@@ -232,8 +228,6 @@ export function computeMonthPnL(
     month,
     label: monthLabel(month),
     revenue,
-    whopFees,
-    grossRevenue,
     adSpend,
     grossProfit,
     grossMarginPct,
