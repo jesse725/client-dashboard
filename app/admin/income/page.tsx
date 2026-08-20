@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Layers,
   Plus, Trash2, Users, Wallet, LayoutDashboard, ListChecks, ChevronDown, ChevronRight, Scale,
+  Pencil, Check, X, RotateCcw, Zap,
 } from 'lucide-react';
 
 function fmt$(n: number) {
@@ -46,14 +47,77 @@ function Warnings({ warnings }: { warnings: { source: string; message: string }[
   );
 }
 
-function Row({ label, value, bold, muted, color, sub }: { label: string; value: string; bold?: boolean; muted?: boolean; color?: string; sub?: string }) {
+function Row({ label, value, bold, muted, color, sub, emphasize }: {
+  label: string; value: string; bold?: boolean; muted?: boolean; color?: string; sub?: string; emphasize?: boolean;
+}) {
   return (
-    <div className="px-4 py-2.5 flex items-center justify-between">
+    <div
+      className="px-4 py-2.5 flex items-center justify-between"
+      style={emphasize ? { borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 } : undefined}
+    >
       <div>
         <span className={bold ? 'font-semibold' : ''} style={{ color: muted ? 'var(--text-muted)' : undefined }}>{label}</span>
         {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
       </div>
       <span className={bold ? 'font-bold' : ''} style={{ color: color ?? (muted ? 'var(--text-muted)' : undefined) }}>{value}</span>
+    </div>
+  );
+}
+
+function SourceBadge({ source }: { source: 'live' | 'manual' | 'unavailable' }) {
+  if (source === 'live') return (
+    <span className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1" style={{ background: 'rgba(34,197,94,0.15)', color: 'var(--green)' }}>
+      <Zap size={9} /> live
+    </span>
+  );
+  if (source === 'manual') return (
+    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--yellow)' }}>manual</span>
+  );
+  return (
+    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--red)' }}>not connected</span>
+  );
+}
+
+// Revenue/Ad Spend row — live Whop/Meta value by default, click the pencil to
+// override a specific month; "revert" clears the override back to live.
+function EditableAmountRow({ label, amount, source, sub, onSave, onRevert, color }: {
+  label: string; amount: number; source: 'live' | 'manual' | 'unavailable'; sub?: string;
+  onSave: (amount: number) => void; onRevert: () => void; color?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(amount));
+
+  if (editing) {
+    return (
+      <div className="px-4 py-2.5 flex items-center justify-between gap-2">
+        <span className="font-semibold">{label}</span>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number" autoFocus value={value} onChange={e => setValue(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { onSave(Number(value)); setEditing(false); } if (e.key === 'Escape') setEditing(false); }}
+            className="input text-sm w-28 text-right"
+          />
+          <button onClick={() => { onSave(Number(value)); setEditing(false); }} className="p-1.5 rounded" style={{ background: 'var(--accent)', color: '#fff' }}><Check size={12} /></button>
+          <button onClick={() => setEditing(false)} className="p-1.5 rounded" style={{ color: 'var(--text-muted)' }}><X size={12} /></button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-2.5 flex items-center justify-between">
+      <div>
+        <span className="font-semibold">{label}</span>
+        {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+      </div>
+      <div className="flex items-center gap-2">
+        <SourceBadge source={source} />
+        {source === 'manual' && (
+          <button onClick={onRevert} title="Revert to live" className="opacity-50 hover:opacity-100"><RotateCcw size={12} /></button>
+        )}
+        <span className="font-bold" style={{ color }}>{fmt$(amount)}</span>
+        <button onClick={() => { setValue(String(amount)); setEditing(true); }} className="opacity-50 hover:opacity-100"><Pencil size={12} /></button>
+      </div>
     </div>
   );
 }
@@ -127,11 +191,13 @@ function OverviewView() {
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Months</h3>
         {years.length > 1 ? (
           <div className="space-y-3">
-            {years.map(y => <YearGroup key={y} year={y} months={byYear[y]} onEntryChange={load} />)}
+            {years.map(y => <YearGroup key={y} year={y} months={byYear[y]} latestMonth={months[months.length - 1].month} onEntryChange={load} />)}
           </div>
         ) : (
           <div className="space-y-2">
-            {months.slice().reverse().map((m: any) => <MonthCard key={m.month} month={m} onEntryChange={load} />)}
+            {months.slice().reverse().map((m: any) => (
+              <MonthCard key={m.month} month={m} defaultExpanded={m.month === months[months.length - 1].month} onEntryChange={load} />
+            ))}
           </div>
         )}
       </div>
@@ -139,7 +205,7 @@ function OverviewView() {
   );
 }
 
-function YearGroup({ year, months, onEntryChange }: { year: string; months: any[]; onEntryChange: () => void }) {
+function YearGroup({ year, months, latestMonth, onEntryChange }: { year: string; months: any[]; latestMonth: string; onEntryChange: () => void }) {
   const [open, setOpen] = useState(year === new Date().getFullYear().toString());
   const yearRevenue = months.reduce((s, m) => s + m.revenue, 0);
   const yearNetProfit = months.reduce((s, m) => s + m.netProfit, 0);
@@ -158,23 +224,29 @@ function YearGroup({ year, months, onEntryChange }: { year: string; months: any[
       </button>
       {open && (
         <div className="p-3 space-y-2" style={{ background: 'var(--background)' }}>
-          {months.slice().reverse().map(m => <MonthCard key={m.month} month={m} onEntryChange={onEntryChange} />)}
+          {months.slice().reverse().map(m => <MonthCard key={m.month} month={m} defaultExpanded={m.month === latestMonth} onEntryChange={onEntryChange} />)}
         </div>
       )}
     </div>
   );
 }
 
-function MonthCard({ month, onEntryChange }: { month: any; onEntryChange: () => void }) {
-  const [expanded, setExpanded] = useState(false);
+function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defaultExpanded?: boolean; onEntryChange: () => void }) {
+  const [expanded, setExpanded] = useState(!!defaultExpanded);
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [showAddEntry, setShowAddEntry] = useState<'other' | 'startup_fund' | null>(null);
+  // Derived fresh every render — never cached in local state, so a carry-forward
+  // ripple from editing a DIFFERENT month (which refreshes `month` via the
+  // parent's summary refetch) is never masked by a stale snapshot here.
+  const pnl = detail?.pnl ?? month;
 
   const loadDetail = useCallback(() => {
     setLoadingDetail(true);
     fetch(`/api/admin/income/monthly?month=${month.month}`).then(r => r.json()).then(d => { setDetail(d); setLoadingDetail(false); });
   }, [month.month]);
+
+  useEffect(() => { if (defaultExpanded) loadDetail(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = () => {
     const next = !expanded;
@@ -191,16 +263,32 @@ function MonthCard({ month, onEntryChange }: { month: any; onEntryChange: () => 
     onEntryChange();
   };
 
+  const setOverride = async (field: 'revenue' | 'adSpend', amount: number) => {
+    await fetch('/api/admin/income/monthly-override', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month: month.month, field, amount }),
+    });
+    loadDetail();
+    onEntryChange();
+  };
+  const revertOverride = async (field: 'revenue' | 'adSpend') => {
+    await fetch(`/api/admin/income/monthly-override?month=${month.month}&field=${field}`, { method: 'DELETE' });
+    loadDetail();
+    onEntryChange();
+  };
+
+  const accentColor = pnl.netProfit >= 0 ? 'var(--green)' : 'var(--red)';
+
   return (
-    <div className="card overflow-hidden">
+    <div className="card overflow-hidden" style={{ borderLeft: `3px solid ${accentColor}` }}>
       <button onClick={toggle} className="w-full px-4 py-3 flex items-center justify-between text-left hover:opacity-90 transition-opacity">
         <div className="flex items-center gap-2">
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <span className="font-semibold text-sm">{month.label}</span>
         </div>
         <div className="flex items-center gap-4 text-sm">
-          <span style={{ color: 'var(--text-muted)' }}>{fmt$(month.revenue)} rev</span>
-          <span className="font-semibold w-20 text-right" style={{ color: month.netProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt$(month.netProfit)}</span>
+          <span style={{ color: 'var(--text-muted)' }}>{fmt$(pnl.revenue)} rev</span>
+          <span className="font-semibold w-20 text-right" style={{ color: accentColor }}>{fmt$(pnl.netProfit)}</span>
         </div>
       </button>
 
@@ -211,18 +299,25 @@ function MonthCard({ month, onEntryChange }: { month: any; onEntryChange: () => 
           ) : (
             <div className="p-3 space-y-3">
               <div className="divide-y text-sm" style={{ borderColor: 'var(--border)' }}>
-                <Row label="Revenue" value={fmt$(month.revenue)} bold sub="net, from Whop — Whop's own fee already deducted" />
-                <Row label="Ad Spend (COGS)" value={`(${fmt$(month.adSpend)})`} muted />
-                <Row label="Gross Profit" value={fmt$(month.grossProfit)} bold color="#0891b2" />
-                <Row label="Gross Margin" value={pct(month.grossMarginPct)} muted />
-                <Row label="Recurring Subscriptions" value={`(${fmt$(month.recurringSubscriptions)})`} muted sub="editable below" />
-                <Row label="Employee Costs" value={`(${fmt$(month.employeeCosts)})`} muted sub="editable below" />
-                <Row label="Other Operating Expenses" value={`(${fmt$(month.otherExpenses)})`} muted />
-                <Row label="Total Operating Expenses" value={fmt$(month.totalOperatingExpenses)} bold />
-                <Row label="Net Profit" value={fmt$(month.netProfit)} bold color={month.netProfit >= 0 ? 'var(--green)' : 'var(--red)'} />
-                <Row label="Profit Margin" value={pct(month.profitMarginPct)} muted />
-                <Row label="ROAS" value={month.roas != null ? `${month.roas.toFixed(2)}x` : '—'} muted />
-                <Row label="Startup Fund Draws" value={fmt$(month.startupFundDraws)} muted sub="excluded from Net Profit — one-time seed capital" />
+                <EditableAmountRow
+                  label="Revenue" amount={pnl.revenue} source={pnl.revenueSource}
+                  sub="net, from Whop — Whop's own fee already deducted"
+                  onSave={v => setOverride('revenue', v)} onRevert={() => revertOverride('revenue')}
+                />
+                <EditableAmountRow
+                  label="Ad Spend (COGS)" amount={pnl.adSpend} source={pnl.adSpendSource}
+                  onSave={v => setOverride('adSpend', v)} onRevert={() => revertOverride('adSpend')}
+                />
+                <Row label="Gross Profit" value={fmt$(pnl.grossProfit)} bold color="#0891b2" />
+                <Row label="Gross Margin" value={pct(pnl.grossMarginPct)} muted />
+                <Row label="Recurring Subscriptions" value={`(${fmt$(pnl.recurringSubscriptions)})`} muted sub="editable below" />
+                <Row label="Employee Costs" value={`(${fmt$(pnl.employeeCosts)})`} muted sub="editable below" />
+                <Row label="Other Operating Expenses" value={`(${fmt$(pnl.otherExpenses)})`} muted />
+                <Row label="Total Operating Expenses" value={fmt$(pnl.totalOperatingExpenses)} bold />
+                <Row label="Net Profit" value={fmt$(pnl.netProfit)} bold color={accentColor} emphasize />
+                <Row label="Profit Margin" value={pct(pnl.profitMarginPct)} muted />
+                <Row label="ROAS" value={pnl.roas != null ? `${pnl.roas.toFixed(2)}x` : '—'} muted />
+                <Row label="Startup Fund Draws" value={fmt$(pnl.startupFundDraws)} muted sub="excluded from Net Profit — one-time seed capital" />
               </div>
 
               <MonthlyItemSection title="Subscriptions" items={detail.subscriptions} onSave={setItemMonth} />

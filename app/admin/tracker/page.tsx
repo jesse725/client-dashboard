@@ -526,6 +526,7 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TrackerPage() {
   const { data: session, status } = useSession();
+  const user = session?.user as any;
   const router = useRouter();
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -536,7 +537,6 @@ export default function TrackerPage() {
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    const user = session?.user as any;
     if (status === 'unauthenticated' || (session && user?.role !== 'admin')) router.push('/login');
   }, [status, session, router]);
 
@@ -613,9 +613,11 @@ export default function TrackerPage() {
           <span className="font-semibold flex items-center gap-2">
             <BarChart2 size={15} style={{ color: 'var(--accent)' }} /> Client Tracker
           </span>
-          <Link href="/admin/sales" className="text-sm hover:opacity-70 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-            <TrendingUp size={13} /> Sales
-          </Link>
+          {user?.canViewFinancials && (
+            <Link href="/admin/sales" className="text-sm hover:opacity-70 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+              <TrendingUp size={13} /> Sales
+            </Link>
+          )}
           <span className="text-sm font-semibold" style={{ color: 'var(--green)' }}>{sumRetainer(active)} MRR</span>
         </div>
         <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
-import { NextAuthOptions } from 'next-auth';
+import { NextAuthOptions, getServerSession } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getDb } from './db';
 
@@ -95,3 +96,15 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt' },
   secret: process.env.NEXTAUTH_SECRET ?? 'dev-secret-change-in-production',
 };
+
+// Shared route guard for pages fully restricted to Jesse (Income Statement,
+// Sales Tracker) — unlike canViewFinancials() alone, this blocks the whole
+// response rather than masking individual fields.
+export async function requireFinancialAccess(): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
+  const session = await getServerSession(authOptions);
+  const user = session?.user as any;
+  if (!session || user?.role !== 'admin' || !canViewFinancials(user.email)) {
+    return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
+  }
+  return { ok: true };
+}

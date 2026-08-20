@@ -1,21 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions, canViewFinancials } from '@/lib/auth';
+import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 
 // Ties the sales pipeline's ad spend/CAC to what those acquired clients are
-// actually worth — same Jesse-only masking as retainer/MRR everywhere else,
-// since this is derived directly from retainer_price.
+// actually worth. The whole Sales Tracker is Jesse-only now, so this no
+// longer needs its own partial-mask — requireFinancialAccess blocks the
+// entire route the same as every other sales-* endpoint.
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const user = session?.user as any;
-  if (!session || user?.role !== 'admin') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  if (!canViewFinancials(user.email)) {
-    return NextResponse.json({ hidden: true });
-  }
+  const auth = await requireFinancialAccess();
+  if (!auth.ok) return auth.response;
 
   const db = getDb();
   const clients = db.prepare(

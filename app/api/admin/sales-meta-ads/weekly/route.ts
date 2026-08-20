@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { fetchMetaAdSpendRange } from '@/lib/meta';
 
 // Returns Meta ad spend for each requested week: ?weeks=2026-07-06,2026-07-13,...
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const user = session?.user as any;
-  if (!session || user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const auth = await requireFinancialAccess();
+  if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(req.url);
   const weeksParam = searchParams.get('weeks');

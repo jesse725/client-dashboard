@@ -1,20 +1,9 @@
-import { getServerSession } from 'next-auth';
-import { NextResponse } from 'next/server';
 import { getDb } from './db';
-import { authOptions, canViewFinancials } from './auth';
+import { requireFinancialAccess } from './auth';
 import { listWhopPayments } from './whop';
 import { fetchMetaSpendByMonth } from './meta';
 
-// Income & Earnings is Jesse-only, unlike the rest of the admin panel — this is
-// the first admin page fully gated (not just individual fields masked).
-export async function requireFinancialAccess(): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
-  const session = await getServerSession(authOptions);
-  const user = session?.user as any;
-  if (!session || user?.role !== 'admin' || !canViewFinancials(user.email)) {
-    return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
-  }
-  return { ok: true };
-}
+export { requireFinancialAccess };
 
 export const DEFAULT_CYCLE_START = '2026-07-01';
 
@@ -119,6 +108,43 @@ export async function getMetaSpendByMonth(since: string, until: string): Promise
   }
 }
 
+export type ValueSource = 'live' | 'manual' | 'unavailable';
+
+// Manual override for a month's Revenue or Ad Spend — wins over the live
+// Whop/Meta figure when set, same "live wins, manual is the fallback/override"
+// convention already used for ad spend in the Sales Tracker.
+export function getMonthlyOverrides(field: 'revenue' | 'adSpend'): Record<string, number> {
+  const db = getDb();
+  const rows = db.prepare('SELECT month, amount FROM income_monthly_overrides WHERE field = ?').all(field) as any[];
+  const map: Record<string, number> = {};
+  for (const r of rows) map[r.month] = r.amount;
+  return map;
+}
+
+export function setMonthlyOverride(month: string, field: 'revenue' | 'adSpend', amount: number) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO income_monthly_overrides (month, field, amount) VALUES (?, ?, ?)
+    ON CONFLICT(month, field) DO UPDATE SET amount = excluded.amount
+  `).run(month, field, amount);
+}
+
+export function clearMonthlyOverride(month: string, field: 'revenue' | 'adSpend') {
+  const db = getDb();
+  db.prepare('DELETE FROM income_monthly_overrides WHERE month = ? AND field = ?').run(month, field);
+}
+
+export function resolveMonthValue(
+  month: string,
+  liveAmount: number | undefined,
+  liveAvailable: boolean,
+  overrides: Record<string, number>
+): { amount: number; source: ValueSource } {
+  if (overrides[month] != null) return { amount: overrides[month], source: 'manual' };
+  if (liveAvailable) return { amount: liveAmount ?? 0, source: 'live' };
+  return { amount: 0, source: 'unavailable' };
+}
+
 export interface ExpenseItem {
   id: number;
   name: string;
@@ -197,7 +223,9 @@ export interface MonthPnL {
   month: string;
   label: string;
   revenue: number; // net of Whop's own platform fee — Whop already accounts for it
+  revenueSource: ValueSource;
   adSpend: number;
+  adSpendSource: ValueSource;
   grossProfit: number;
   grossMarginPct: number;
   recurringSubscriptions: number;
@@ -215,7 +243,9 @@ export function computeMonthPnL(
   revenue: number,
   adSpend: number,
   recurringSubscriptions: number,
-  employeeCosts: number
+  employeeCosts: number,
+  revenueSource: ValueSource = 'live',
+  adSpendSource: ValueSource = 'live'
 ): MonthPnL {
   // Revenue is already net of Whop's platform fee (pulled from Whop's own
   // amount_after_fees), so no separate fee deduction here — that would double
@@ -238,7 +268,9 @@ export function computeMonthPnL(
     month,
     label: monthLabel(month),
     revenue,
+    revenueSource,
     adSpend,
+    adSpendSource,
     grossProfit,
     grossMarginPct,
     recurringSubscriptions,

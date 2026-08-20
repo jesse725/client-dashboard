@@ -181,13 +181,15 @@ export default function AdminPage() {
           <Link href="/admin/tracker" className="btn-ghost text-sm flex items-center gap-2">
             <BarChart2 size={14} /> Client Tracker
           </Link>
-          <Link href="/admin/sales" className="btn-ghost text-sm flex items-center gap-2">
-            <TrendingUp size={14} /> Sales Tracker
-          </Link>
           {user?.canViewFinancials && (
-            <Link href="/admin/income" className="btn-ghost text-sm flex items-center gap-2">
-              <DollarSign size={14} /> Income
-            </Link>
+            <>
+              <Link href="/admin/sales" className="btn-ghost text-sm flex items-center gap-2">
+                <TrendingUp size={14} /> Sales Tracker
+              </Link>
+              <Link href="/admin/income" className="btn-ghost text-sm flex items-center gap-2">
+                <DollarSign size={14} /> Income
+              </Link>
+            </>
           )}
           <Link href="/admin/onboard" className="btn-primary text-sm flex items-center gap-2">
             <Plus size={14} /> Onboard Client

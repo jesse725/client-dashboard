@@ -944,6 +944,7 @@ export default function SalesPage() {
   useEffect(() => {
     const user = session?.user as any;
     if (status === 'unauthenticated' || (session && user?.role !== 'admin')) router.push('/login');
+    if (status === 'authenticated' && user?.role === 'admin' && !user?.canViewFinancials) router.push('/admin/home');
   }, [status, session, router]);
 
   const loadData = useCallback(async () => {
@@ -1006,7 +1007,8 @@ export default function SalesPage() {
     setEditingAdSpend(false);
   }
 
-  if (loading) return (
+  const currentUser = session?.user as any;
+  if (loading || status !== 'authenticated' || currentUser?.role !== 'admin' || !currentUser?.canViewFinancials) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
       <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading sales pipeline…</p>
     </div>

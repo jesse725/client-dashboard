@@ -32,26 +32,28 @@ export default function AdminHomePage() {
       color: 'var(--accent)',
     },
     {
-      href: '/admin/sales',
-      title: 'Sales Tracker',
-      desc: 'Merova AV Pipeline — funnel, weekly KPIs, kanban & table views',
-      icon: <TrendingUp size={22} />,
-      color: 'var(--green)',
-    },
-    {
       href: '/admin/onboard',
       title: 'Onboard Client',
       desc: 'Set up a new client account, GHL connection & billing details',
       icon: <Plus size={22} />,
       color: 'var(--yellow)',
     },
-    ...(user?.canViewFinancials ? [{
-      href: '/admin/income',
-      title: 'Income Statement',
-      desc: 'Live income statement, monthly P&L, subscriptions & payroll',
-      icon: <DollarSign size={22} />,
-      color: '#0d9488',
-    }] : []),
+    ...(user?.canViewFinancials ? [
+      {
+        href: '/admin/sales',
+        title: 'Sales Tracker',
+        desc: 'Merova AV Pipeline — funnel, weekly KPIs, kanban & table views',
+        icon: <TrendingUp size={22} />,
+        color: 'var(--green)',
+      },
+      {
+        href: '/admin/income',
+        title: 'Income Statement',
+        desc: 'Live income statement, monthly P&L, subscriptions & payroll',
+        icon: <DollarSign size={22} />,
+        color: '#0d9488',
+      },
+    ] : []),
   ];
 
   return (

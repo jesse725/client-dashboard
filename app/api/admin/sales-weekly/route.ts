@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const user = session?.user as any;
-  if (!session || user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const auth = await requireFinancialAccess();
+  if (!auth.ok) return auth.response;
 
   const db = getDb();
   const rows = db.prepare('SELECT * FROM sales_weekly ORDER BY week_start DESC').all();
@@ -16,11 +12,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const user = session?.user as any;
-  if (!session || user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const auth = await requireFinancialAccess();
+  if (!auth.ok) return auth.response;
 
   const body = await req.json();
   const { week_start, ad_spend, cash_collected, total_ltv, qualified_calls, booked_ad } = body;

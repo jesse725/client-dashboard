@@ -271,6 +271,17 @@ function initSchema(db: Database.Database) {
       amount REAL NOT NULL DEFAULT 0,
       UNIQUE(item_id, month)
     );
+
+    -- Manual override for a month's Revenue or Ad Spend, when the live
+    -- Whop/Meta figure is missing, wrong, or just not trusted for that month.
+    -- A month with no row here uses the live-fetched value.
+    CREATE TABLE IF NOT EXISTS income_monthly_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      month TEXT NOT NULL,
+      field TEXT NOT NULL CHECK(field IN ('revenue','adSpend')),
+      amount REAL NOT NULL DEFAULT 0,
+      UNIQUE(month, field)
+    );
   `);
 
   seedIncomeData(db);
