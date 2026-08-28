@@ -282,8 +282,54 @@ function initSchema(db: Database.Database) {
       amount REAL NOT NULL DEFAULT 0,
       UNIQUE(month, field)
     );
+
+    -- Payroll: employees log in directly against this table by email (same
+    -- pattern as the clients table — no users-table row needed), so setting
+    -- active to 0 both hides them from admin lists and blocks their login.
+    CREATE TABLE IF NOT EXISTS employees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      base_amount_per_period REAL NOT NULL DEFAULT 0,
+      per_client_fee REAL NOT NULL DEFAULT 0,
+      revenue_share_pct REAL NOT NULL DEFAULT 0,
+      hourly_bonus_rate REAL NOT NULL DEFAULT 0,
+      hourly_bonus_threshold_minutes INTEGER NOT NULL DEFAULT 60,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- One row per employee per payout date. base_amount is a SNAPSHOT of
+    -- base_amount_per_period at the moment the period was first created, so
+    -- editing an employee's rate later never rewrites payroll history.
+    CREATE TABLE IF NOT EXISTS pay_periods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      payout_date TEXT NOT NULL,
+      base_amount REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid')),
+      paid_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(employee_id, payout_date)
+    );
+
+    -- totalAmount is deliberately NOT stored — always base_amount + SUM(amount)
+    -- computed at read time, so it can never drift from its line items.
+    CREATE TABLE IF NOT EXISTS pay_period_bonuses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pay_period_id INTEGER NOT NULL REFERENCES pay_periods(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      added_by TEXT,
+      added_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
+  seedPayrollData(db);
   seedIncomeData(db);
 
   // Seed agency GHL settings
@@ -316,6 +362,37 @@ function initSchema(db: Database.Database) {
     db.prepare('UPDATE users SET password_hash = ?, role = ?, name = ? WHERE email = ?').run(
       primaryHash, 'admin', 'Jesse', 'jesse@merovamedia.com'
     );
+  }
+}
+
+// One-time seed of the starter payroll roster. Figures are unverified against
+// signed contracts — flagged both here and in each employee's notes field so
+// the warning surfaces in the UI itself, not just in chat. Only runs if the
+// table is still empty, so it never overwrites real edits.
+function seedPayrollData(db: Database.Database) {
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM employees').get() as any).c;
+  if (count > 0) return;
+
+  const UNVERIFIED = '⚠️ Seed figure from a planning conversation — confirm against the signed contract before relying on this for real payroll.';
+  const roster: { name: string; role: string; email: string; base: number; perClientFee?: number; revSharePct?: number; notes?: string }[] = [
+    { name: 'Vojtech', role: 'Media Buyer', email: 'vojtech@example.invalid', base: 400 },
+    {
+      name: 'Mo', role: 'CSM', email: 'mo@example.invalid', base: 75, revSharePct: 5,
+      notes: '5% revenue share applies after a 3-month client renewal; also gets a ~$90 one-time renewal bonus. Neither is a fixed per-period amount — log both as bonus items in the period actually earned.',
+    },
+    { name: 'Bolu', role: 'Onboarding VA / A2P', email: 'bolu@example.invalid', base: 150, perClientFee: 50 },
+    { name: 'Renz', role: 'Automations / GHL', email: 'renz@example.invalid', base: 175 },
+    { name: 'Mea', role: 'Creative / Design', email: 'mea@example.invalid', base: 100 },
+    { name: 'Appointment Setter', role: 'Speed-to-lead / calls', email: 'appointmentsetter@example.invalid', base: 250 },
+  ];
+
+  const insert = db.prepare(`
+    INSERT INTO employees (name, role, email, base_amount_per_period, per_client_fee, revenue_share_pct, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const e of roster) {
+    const notes = [UNVERIFIED, e.notes].filter(Boolean).join(' ');
+    insert.run(e.name, e.role, e.email, e.base, e.perClientFee ?? 0, e.revSharePct ?? 0, notes);
   }
 }
 

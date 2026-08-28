@@ -50,6 +50,21 @@ export const authOptions: NextAuthOptions = {
               };
             }
           }
+          // Employee login — same email-only pattern, direct match against the
+          // employees table (no users-table row needed at all). Deactivating an
+          // employee (active = 0) blocks login immediately.
+          const employee = db.prepare(
+            'SELECT * FROM employees WHERE LOWER(email) = ? AND active = 1'
+          ).get(String(credentials.email).trim().toLowerCase()) as any;
+          if (employee) {
+            return {
+              id: `employee-${employee.id}`,
+              email: employee.email,
+              name: employee.name,
+              role: 'employee',
+              employeeId: String(employee.id),
+            };
+          }
           return null;
         }
 
@@ -76,6 +91,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as any).role;
         token.clientId = (user as any).clientId;
+        token.employeeId = (user as any).employeeId ?? null;
         token.canViewFinancials = (user as any).canViewFinancials ?? false;
       }
       return token;
@@ -84,6 +100,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).role = token.role;
         (session.user as any).clientId = token.clientId;
+        (session.user as any).employeeId = token.employeeId ?? null;
         (session.user as any).id = token.sub;
         (session.user as any).canViewFinancials = token.canViewFinancials ?? false;
       }
@@ -107,4 +124,20 @@ export async function requireFinancialAccess(): Promise<{ ok: true } | { ok: fal
     return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   }
   return { ok: true };
+}
+
+// Guard for an employee's OWN payroll routes. Deliberately returns only the
+// employeeId derived from the session — callers must use this id for every
+// query and must never accept an employeeId from the request (body/query/
+// params) for a "my own data" route, or a signed-in employee could read
+// someone else's pay by just changing an id in the request.
+export async function requireEmployeeAccess(): Promise<
+  { ok: true; employeeId: number } | { ok: false; response: NextResponse }
+> {
+  const session = await getServerSession(authOptions);
+  const user = session?.user as any;
+  if (!session || user?.role !== 'employee' || !user?.employeeId) {
+    return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
+  }
+  return { ok: true, employeeId: Number(user.employeeId) };
 }

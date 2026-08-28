@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<'client' | 'team'>('client');
+  const [mode, setMode] = useState<'client' | 'employee' | 'team'>('client');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -23,9 +23,11 @@ export default function LoginPage() {
     });
 
     if (res?.error) {
-      setError(mode === 'client'
-        ? 'No account found for that email. Make sure you use the email from your onboarding form.'
-        : 'Invalid email or password.');
+      setError(
+        mode === 'client' ? 'No account found for that email. Make sure you use the email from your onboarding form.'
+        : mode === 'employee' ? 'No account found for that email. Check with your admin if this seems wrong.'
+        : 'Invalid email or password.'
+      );
       setLoading(false);
     } else {
       // Fetch session to get clientId for client redirect
@@ -34,6 +36,8 @@ export default function LoginPage() {
       const user = session?.user as any;
       if (user?.role === 'client' && user?.clientId) {
         router.push(`/dashboard/${user.clientId}`);
+      } else if (user?.role === 'employee') {
+        router.push('/employee');
       } else {
         router.push('/dashboard');
       }
@@ -63,6 +67,15 @@ export default function LoginPage() {
             I'm a Client
           </button>
           <button
+            onClick={() => { setMode('employee'); setError(''); }}
+            className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
+            style={{
+              background: mode === 'employee' ? 'var(--accent)' : 'transparent',
+              color: mode === 'employee' ? '#fff' : 'var(--text-muted)',
+            }}>
+            I'm an Employee
+          </button>
+          <button
             onClick={() => { setMode('team'); setError(''); }}
             className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
             style={{
@@ -88,6 +101,25 @@ export default function LoginPage() {
                   onChange={e => setEmail(e.target.value)}
                   className="input"
                   placeholder="you@yourbusiness.com"
+                  required
+                  autoFocus
+                />
+              </div>
+            </>
+          ) : mode === 'employee' ? (
+            <>
+              <div className="text-center pb-1">
+                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Welcome back 👋</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Enter the email your admin has on file for you</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Your Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="input"
+                  placeholder="you@merova.com"
                   required
                   autoFocus
                 />
@@ -128,7 +160,7 @@ export default function LoginPage() {
           )}
 
           <button type="submit" className="btn-primary w-full" disabled={loading}>
-            {loading ? 'Signing in…' : mode === 'client' ? 'Access My Dashboard' : 'Sign In'}
+            {loading ? 'Signing in…' : mode === 'client' ? 'Access My Dashboard' : mode === 'employee' ? 'Access My Payroll' : 'Sign In'}
           </button>
         </form>
       </div>

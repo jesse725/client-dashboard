@@ -46,9 +46,50 @@ export interface User {
   id: number;
   email: string;
   password_hash: string;
-  role: 'admin' | 'client';
+  role: 'admin' | 'client' | 'employee';
   client_id: number | null;
   name: string;
+}
+
+export interface Employee {
+  id: number;
+  name: string;
+  role: string; // job title, e.g. "Media Buyer"
+  email: string;
+  active: number; // 0/1 — also gates login, same convention as clients.onboard_status
+  base_amount_per_period: number;
+  per_client_fee: number;
+  revenue_share_pct: number;
+  hourly_bonus_rate: number;
+  hourly_bonus_threshold_minutes: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface PayPeriodBonus {
+  id: number;
+  pay_period_id: number;
+  description: string;
+  amount: number;
+  added_by: string | null;
+  added_at: string;
+}
+
+export interface PayPeriod {
+  id: number;
+  employee_id: number;
+  period_start: string;
+  period_end: string;
+  payout_date: string;
+  base_amount: number;
+  status: 'pending' | 'paid';
+  paid_at: string | null;
+  created_at: string;
+}
+
+export interface PayPeriodWithTotal extends PayPeriod {
+  bonusItems: PayPeriodBonus[];
+  totalAmount: number; // base_amount + sum(bonusItems) — always computed, never stored
 }
 
 export interface GHLStageCount {
