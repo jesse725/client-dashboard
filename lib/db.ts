@@ -349,6 +349,10 @@ function initSchema(db: Database.Database) {
   const employeeCols = (db.prepare("PRAGMA table_info(employees)").all() as any[]).map((c: any) => c.name);
   if (!employeeCols.includes('payment_method')) db.exec("ALTER TABLE employees ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'bank_transfer'");
   if (!employeeCols.includes('agreement_url')) db.exec('ALTER TABLE employees ADD COLUMN agreement_url TEXT');
+  // Who's assigned to own this employee's payroll card — a plain display
+  // name (an admin's or another staff member's), not a hard FK, since the
+  // picker sources from two different tables (users + employees).
+  if (!employeeCols.includes('assigned_to')) db.exec('ALTER TABLE employees ADD COLUMN assigned_to TEXT');
 
   seedPayrollData(db);
   seedIncomeData(db);

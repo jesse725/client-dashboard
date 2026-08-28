@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Wallet, Calendar, CheckCircle2, Clock, LogOut, Info, FileText } from 'lucide-react';
+import { Wallet, Calendar, CheckCircle2, Clock, LogOut, Info, FileText, Timer } from 'lucide-react';
 import { PAYMENT_METHODS } from '@/lib/payroll-constants';
 
 function methodLabel(value: string): string {
@@ -14,6 +14,25 @@ function fmt$(n: number) {
 }
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Live-ish countdown to a payout date — recomputes every minute.
+function useCountdown(targetDate: string | null) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!targetDate) return;
+    const id = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+
+  if (!targetDate) return null;
+  const target = new Date(targetDate + 'T00:00:00');
+  const diffMs = target.getTime() - now.getTime();
+  if (diffMs <= 0) return 'Due today';
+  const days = Math.floor(diffMs / 86400000);
+  const hours = Math.floor((diffMs % 86400000) / 3600000);
+  if (days === 0) return `${hours}h`;
+  return `${days}d ${hours}h`;
 }
 
 function StatusPill({ status }: { status: 'pending' | 'paid' }) {
@@ -45,6 +64,10 @@ export default function EmployeePayrollPage() {
     if (status !== 'authenticated' || user?.role !== 'employee') return;
     fetch('/api/employee/payroll').then(r => r.json()).then(d => { setData(d); setLoading(false); });
   }, [status, user]);
+
+  // Called unconditionally (before any early return) per the Rules of Hooks
+  // — optional chaining keeps it safe while `data` is still null during load.
+  const countdown = useCountdown(data?.currentPeriod?.status === 'pending' ? data.currentPeriod.payout_date : null);
 
   if (status !== 'authenticated' || user?.role !== 'employee' || loading || !data) {
     return (
@@ -92,6 +115,11 @@ export default function EmployeePayrollPage() {
               <div className="text-center py-3 mb-3 rounded-xl" style={{ background: 'var(--surface-2)' }}>
                 <p className="text-3xl font-bold" style={{ color: 'var(--green)' }}>{fmt$(currentPeriod.totalAmount)}</p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>total this period</p>
+                {countdown && (
+                  <p className="text-xs mt-2 flex items-center justify-center gap-1" style={{ color: 'var(--accent)' }}>
+                    <Timer size={11} /> {countdown === 'Due today' ? countdown : `${countdown} until payout`}
+                  </p>
+                )}
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">

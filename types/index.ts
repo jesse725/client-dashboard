@@ -66,6 +66,7 @@ export interface Employee {
   hourly_bonus_threshold_minutes: number;
   payment_method: PaymentMethod;
   agreement_url: string | null; // link to the signed employment agreement (Drive/Dropbox/etc.)
+  assigned_to: string | null; // display name of the admin/staff member who owns this employee's payroll card
   notes: string | null;
   created_at: string;
 }

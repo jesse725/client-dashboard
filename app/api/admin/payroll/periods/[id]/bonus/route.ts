@@ -30,6 +30,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({ period: getPeriodWithTotal(Number(id)) });
 }
 
+// Updates an existing bonus item's amount in place — used by the "Variable
+// Pay" quick-edit field so re-setting it updates the one line item instead
+// of piling up duplicates. Refreshes added_by/added_at to reflect the edit.
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireFinancialAccess();
+  if (!auth.ok) return auth.response;
+
+  const { searchParams } = new URL(req.url);
+  const bonusId = searchParams.get('bonusId');
+  if (!bonusId) return NextResponse.json({ error: 'bonusId query param required' }, { status: 400 });
+
+  const { id } = await params;
+  const { amount } = await req.json();
+  if (amount == null) return NextResponse.json({ error: 'amount is required' }, { status: 400 });
+
+  const session = await getServerSession(authOptions);
+  const addedBy = (session?.user as any)?.email ?? 'unknown';
+
+  const db = getDb();
+  db.prepare(
+    "UPDATE pay_period_bonuses SET amount = ?, added_by = ?, added_at = datetime('now') WHERE id = ? AND pay_period_id = ?"
+  ).run(Number(amount), addedBy, bonusId, id);
+
+  return NextResponse.json({ period: getPeriodWithTotal(Number(id)) });
+}
+
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireFinancialAccess();
   if (!auth.ok) return auth.response;

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { ensureCurrentPeriod, getPeriodWithTotal } from '@/lib/payroll';
+import { ensureCurrentPeriod, getPeriodWithTotal, getPeriodForDate } from '@/lib/payroll';
 
 // Payroll is Jesse-only, same as the rest of this app's financial data —
 // other admins can't see coworkers' pay.
@@ -18,7 +18,10 @@ export async function GET() {
     return { ...e, currentPeriod: getPeriodWithTotal(periodId) };
   });
 
-  return NextResponse.json({ employees: withCurrentPeriod });
+  // Same payout schedule for everyone, so one date covers the whole roster.
+  const nextPayoutDate = getPeriodForDate(new Date()).payoutDate;
+
+  return NextResponse.json({ employees: withCurrentPeriod, nextPayoutDate });
 }
 
 export async function POST(req: Request) {
@@ -39,8 +42,8 @@ export async function POST(req: Request) {
       INSERT INTO employees (
         name, role, email, active, base_amount_per_period, per_client_fee,
         revenue_share_pct, hourly_bonus_rate, hourly_bonus_threshold_minutes,
-        payment_method, agreement_url, notes
-      ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+        payment_method, agreement_url, assigned_to, notes
+      ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name, role, String(email).trim().toLowerCase(),
       Number(body.baseAmountPerPeriod) || 0,
@@ -50,6 +53,7 @@ export async function POST(req: Request) {
       Number(body.hourlyBonusThresholdMinutes) || 60,
       paymentMethod,
       body.agreementUrl || null,
+      body.assignedTo || null,
       body.notes || null
     );
     return NextResponse.json({ id: result.lastInsertRowid });

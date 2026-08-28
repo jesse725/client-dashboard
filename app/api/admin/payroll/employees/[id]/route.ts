@@ -19,7 +19,7 @@ const ALLOWED_FIELDS: Record<string, string> = {
   baseAmountPerPeriod: 'base_amount_per_period', perClientFee: 'per_client_fee',
   revenueSharePct: 'revenue_share_pct', hourlyBonusRate: 'hourly_bonus_rate',
   hourlyBonusThresholdMinutes: 'hourly_bonus_threshold_minutes', notes: 'notes',
-  paymentMethod: 'payment_method', agreementUrl: 'agreement_url',
+  paymentMethod: 'payment_method', agreementUrl: 'agreement_url', assignedTo: 'assigned_to',
 };
 
 const VALID_PAYMENT_METHODS = ['bank_transfer', 'wise', 'paypal', 'check', 'other'];

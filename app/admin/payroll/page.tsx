@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Users, Plus, ChevronDown, ChevronRight, CheckCircle2, Clock,
-  Download, Trash2, AlertTriangle, FileText, Landmark,
+  Trash2, AlertTriangle, FileText, Landmark, UserCog, Timer,
 } from 'lucide-react';
 import { PAYMENT_METHODS } from '@/lib/payroll-constants';
 
@@ -18,6 +18,26 @@ function fmt$(n: number) {
 }
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Live-ish countdown to the next payout date — recomputes every minute, no
+// need for second-level precision for something days away.
+function useCountdown(targetDate: string | null) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!targetDate) return;
+    const id = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+
+  if (!targetDate) return null;
+  const target = new Date(targetDate + 'T00:00:00');
+  const diffMs = target.getTime() - now.getTime();
+  if (diffMs <= 0) return 'Due today';
+  const days = Math.floor(diffMs / 86400000);
+  const hours = Math.floor((diffMs % 86400000) / 3600000);
+  if (days === 0) return `${hours}h`;
+  return `${days}d ${hours}h`;
 }
 
 function StatusPill({ status }: { status: 'pending' | 'paid' }) {
@@ -34,7 +54,7 @@ function StatusPill({ status }: { status: 'pending' | 'paid' }) {
 }
 
 // ── Employee Card ────────────────────────────────────────────────────────────
-function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => void }) {
+function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any; assignableOptions: string[]; onChange: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -64,6 +84,7 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
       revenueSharePct: employee.revenue_share_pct, hourlyBonusRate: employee.hourly_bonus_rate,
       hourlyBonusThresholdMinutes: employee.hourly_bonus_threshold_minutes,
       paymentMethod: employee.payment_method ?? 'bank_transfer', agreementUrl: employee.agreement_url ?? '',
+      assignedTo: employee.assigned_to ?? '',
       notes: employee.notes ?? '',
     });
     setEditing(true);
@@ -95,6 +116,27 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
     onChange();
   };
 
+  // "Variable Pay" is a bonus item like any other, just with a reserved
+  // description so this one field can quick-edit it directly (update/create/
+  // delete-at-zero) instead of going through the generic add-bonus form.
+  const variablePayItem = cp?.bonusItems?.find((b: any) => b.description === 'Variable Pay');
+  const setVariablePay = async (amount: number) => {
+    if (!cp) return;
+    if (amount <= 0) {
+      if (variablePayItem) await fetch(`/api/admin/payroll/periods/${cp.id}/bonus?bonusId=${variablePayItem.id}`, { method: 'DELETE' });
+    } else if (variablePayItem) {
+      await fetch(`/api/admin/payroll/periods/${cp.id}/bonus?bonusId=${variablePayItem.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount }),
+      });
+    } else {
+      await fetch(`/api/admin/payroll/periods/${cp.id}/bonus`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: 'Variable Pay', amount }),
+      });
+    }
+    loadDetail();
+    onChange();
+  };
 
   const undoPaid = async (periodId: number) => {
     await fetch(`/api/admin/payroll/periods/${periodId}/mark-paid`, { method: 'DELETE' });
@@ -156,6 +198,12 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                     {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
                 </Field>
+                <Field label="Assigned To">
+                  <select className="input text-sm" value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })}>
+                    <option value="">Unassigned</option>
+                    {assignableOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </Field>
               </div>
               <Field label="Employment Agreement URL"><input className="input text-sm w-full" placeholder="Link to signed agreement (Drive, Dropbox, etc.)" value={form.agreementUrl} onChange={e => setForm({ ...form, agreementUrl: e.target.value })} /></Field>
               <Field label="Notes"><textarea className="input text-sm w-full" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
@@ -178,6 +226,8 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                   {employee.hourly_bonus_rate > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Hourly bonus</span><span className="text-right font-medium">{fmt$(employee.hourly_bonus_rate)}/hr past {employee.hourly_bonus_threshold_minutes}min</span></>)}
                   <span style={{ color: 'var(--text-muted)' }} className="flex items-center gap-1"><Landmark size={12} /> Payment method</span>
                   <span className="text-right font-medium">{methodLabel(employee.payment_method)}</span>
+                  <span style={{ color: 'var(--text-muted)' }} className="flex items-center gap-1"><UserCog size={12} /> Assigned to</span>
+                  <span className="text-right font-medium">{employee.assigned_to || '—'}</span>
                 </div>
                 {employee.agreement_url && (
                   <a href={employee.agreement_url} target="_blank" rel="noopener noreferrer"
@@ -201,7 +251,18 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                     <span style={{ color: 'var(--text-muted)' }}>Base</span>
                     <span className="font-medium">{fmt$(cp.base_amount)}</span>
                   </div>
-                  {cp.bonusItems.map((b: any) => (
+                  <div className="flex items-center justify-between text-sm mb-2 gap-2">
+                    <span style={{ color: 'var(--text-muted)' }}>Variable Pay</span>
+                    <input
+                      type="number" placeholder="0" defaultValue={variablePayItem?.amount || ''} key={variablePayItem?.amount ?? 'empty'}
+                      onBlur={e => {
+                        const v = Number(e.target.value) || 0;
+                        if (v !== (variablePayItem?.amount ?? 0)) setVariablePay(v);
+                      }}
+                      className="input text-sm w-24 text-right"
+                    />
+                  </div>
+                  {cp.bonusItems.filter((b: any) => b.description !== 'Variable Pay').map((b: any) => (
                     <div key={b.id} className="flex items-center justify-between text-sm mb-2 gap-2">
                       <div className="min-w-0">
                         <p className="truncate">{b.description}</p>
@@ -219,7 +280,7 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                   </div>
 
                   <div className="flex items-center gap-2 mt-3">
-                    <input placeholder="Bonus description" value={bonusDesc} onChange={e => setBonusDesc(e.target.value)} className="input text-sm flex-1 min-w-0" />
+                    <input placeholder="Other bonus description" value={bonusDesc} onChange={e => setBonusDesc(e.target.value)} className="input text-sm flex-1 min-w-0" />
                     <input type="number" placeholder="$" value={bonusAmount} onChange={e => setBonusAmount(e.target.value)} className="input text-sm w-20" />
                     <button onClick={addBonus} className="btn-ghost text-xs px-3 shrink-0"><Plus size={13} /></button>
                   </div>
@@ -335,8 +396,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: '', role: '', email: '', baseAmountPerPeriod: '', paymentMethod: 'bank_transfer' });
+function AddEmployeeModal({ assignableOptions, onClose, onSaved }: { assignableOptions: string[]; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ name: '', role: '', email: '', baseAmountPerPeriod: '', paymentMethod: 'bank_transfer', assignedTo: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -369,6 +430,10 @@ function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <select className="input w-full text-sm" value={form.paymentMethod} onChange={e => setForm({ ...form, paymentMethod: e.target.value })}>
             {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
+          <select className="input w-full text-sm" value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })}>
+            <option value="">Assigned to… (optional)</option>
+            {assignableOptions.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
         </div>
         {error && <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>{error}</p>}
         <div className="flex justify-end gap-2 mt-4">
@@ -380,52 +445,22 @@ function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   );
 }
 
-function ExportSection() {
-  const [payoutDates, setPayoutDates] = useState<any[]>([]);
-  const [selected, setSelected] = useState('');
-
-  useEffect(() => {
-    fetch('/api/admin/payroll/payout-dates').then(r => r.json()).then(d => {
-      setPayoutDates(d.payoutDates ?? []);
-      if (d.payoutDates?.[0]) setSelected(d.payoutDates[0].payout_date);
-    });
-  }, []);
-
-  return (
-    <div className="card p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-muted)' }}>Export for Wise</p>
-      <div className="flex items-center gap-2 flex-wrap">
-        <select className="input text-sm flex-1 min-w-[160px]" value={selected} onChange={e => setSelected(e.target.value)}>
-          {payoutDates.map(p => (
-            <option key={p.payout_date} value={p.payout_date}>{fmtDate(p.payout_date)} — {p.pendingCount} pending</option>
-          ))}
-        </select>
-        <a
-          href={selected ? `/api/admin/payroll/export?payoutDate=${selected}` : undefined}
-          className="btn-primary text-sm flex items-center gap-1.5"
-          style={{ pointerEvents: selected ? 'auto' : 'none', opacity: selected ? 1 : 0.5 }}
-        >
-          <Download size={13} /> Export CSV
-        </a>
-      </div>
-      <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
-        Exports pending totals only, for manual entry into Wise. Column layout is a best-effort guess — check it against Wise's real bulk-payment template before a real batch upload.
-      </p>
-    </div>
-  );
-}
-
 export default function AdminPayrollPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const user = session?.user as any;
   const [employees, setEmployees] = useState<any[]>([]);
+  const [nextPayoutDate, setNextPayoutDate] = useState<string | null>(null);
+  const [adminNames, setAdminNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [dataVersion, setDataVersion] = useState(0); // bumped on any change so ExportSection's stale count refreshes too
 
   const load = useCallback(() => {
-    fetch('/api/admin/payroll/employees').then(r => r.json()).then(d => { setEmployees(d.employees ?? []); setLoading(false); setDataVersion(v => v + 1); });
+    fetch('/api/admin/payroll/employees').then(r => r.json()).then(d => {
+      setEmployees(d.employees ?? []);
+      setNextPayoutDate(d.nextPayoutDate ?? null);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -435,8 +470,15 @@ export default function AdminPayrollPage() {
   }, [status, user, router]);
 
   useEffect(() => {
-    if (status === 'authenticated' && user?.role === 'admin' && user?.canViewFinancials) load();
+    if (status === 'authenticated' && user?.role === 'admin' && user?.canViewFinancials) {
+      load();
+      fetch('/api/users').then(r => r.json()).then(users => {
+        setAdminNames((Array.isArray(users) ? users : []).filter((u: any) => u.role === 'admin').map((u: any) => u.name));
+      });
+    }
   }, [status, user, load]);
+
+  const countdown = useCountdown(nextPayoutDate);
 
   if (status !== 'authenticated' || user?.role !== 'admin' || !user?.canViewFinancials || loading) {
     return (
@@ -449,6 +491,9 @@ export default function AdminPayrollPage() {
   const activeEmployees = employees.filter(e => e.active);
   const currentTotal = activeEmployees.reduce((s, e) => s + (e.currentPeriod?.totalAmount ?? 0), 0);
   const pendingCount = activeEmployees.filter(e => e.currentPeriod?.status === 'pending').length;
+  // Assignment picker sources both admins and other payroll employees, so
+  // either kind of person can own a card.
+  const assignableOptions = Array.from(new Set([...adminNames, ...employees.map(e => e.name)])).sort();
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
@@ -466,7 +511,7 @@ export default function AdminPayrollPage() {
       </nav>
 
       <div className="px-4 sm:px-6 py-6 max-w-2xl mx-auto space-y-5">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="card px-4 py-4">
             <p className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>Current Period Total</p>
             <p className="font-bold text-xl" style={{ color: 'var(--accent)' }}>{fmt$(currentTotal)}</p>
@@ -477,16 +522,19 @@ export default function AdminPayrollPage() {
               <p className="font-bold text-xl" style={{ color: 'var(--yellow)' }}>{pendingCount} <span className="text-sm font-normal" style={{ color: 'var(--text-muted)' }}>of {activeEmployees.length}</span></p>
             </div>
           </div>
+          <div className="card px-4 py-4">
+            <p className="text-xs mb-0.5 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}><Timer size={11} /> Next Payout</p>
+            <p className="font-bold text-xl" style={{ color: 'var(--green)' }}>{countdown ?? '—'}</p>
+            {nextPayoutDate && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{fmtDate(nextPayoutDate)}</p>}
+          </div>
         </div>
 
-        <ExportSection key={dataVersion} />
-
         <div className="space-y-2">
-          {employees.map(e => <EmployeeCard key={e.id} employee={e} onChange={load} />)}
+          {employees.map(e => <EmployeeCard key={e.id} employee={e} assignableOptions={assignableOptions.filter(n => n !== e.name)} onChange={load} />)}
         </div>
       </div>
 
-      {showAdd && <AddEmployeeModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
+      {showAdd && <AddEmployeeModal assignableOptions={assignableOptions} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />}
     </div>
   );
 }
