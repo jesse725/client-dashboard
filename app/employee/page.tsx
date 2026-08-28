@@ -2,7 +2,12 @@
 import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Wallet, Calendar, CheckCircle2, Clock, LogOut, Info } from 'lucide-react';
+import { Wallet, Calendar, CheckCircle2, Clock, LogOut, Info, FileText } from 'lucide-react';
+import { PAYMENT_METHODS } from '@/lib/payroll-constants';
+
+function methodLabel(value: string): string {
+  return PAYMENT_METHODS.find(m => m.value === value)?.label ?? value;
+}
 
 function fmt$(n: number) {
   return `$${Math.round(n).toLocaleString()}`;
@@ -107,6 +112,11 @@ export default function EmployeePayrollPage() {
                   ))
                 )}
               </div>
+              {currentPeriod.status === 'paid' && currentPeriod.paymentRecords?.[0] && (
+                <p className="text-xs mt-3 pt-3" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
+                  Paid via {methodLabel(currentPeriod.paymentRecords[0].method)} on {fmtDate(currentPeriod.paymentRecords[0].paid_at.slice(0, 10))}
+                </p>
+              )}
             </>
           ) : (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No period found yet.</p>
@@ -130,6 +140,9 @@ export default function EmployeePayrollPage() {
                     {p.bonusItems.length > 0 && (
                       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.bonusItems.length} bonus{p.bonusItems.length > 1 ? 'es' : ''} included</p>
                     )}
+                    {p.paymentRecords?.[0] && (
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>via {methodLabel(p.paymentRecords[0].method)}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusPill status={p.status} />
@@ -143,7 +156,15 @@ export default function EmployeePayrollPage() {
 
         {/* Pay structure summary */}
         <div className="card p-5">
-          <h2 className="font-semibold text-sm flex items-center gap-1.5 mb-3"><Info size={14} style={{ color: 'var(--accent)' }} /> How Your Pay Is Calculated</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-sm flex items-center gap-1.5"><Info size={14} style={{ color: 'var(--accent)' }} /> How Your Pay Is Calculated</h2>
+            {employee.agreementUrl && (
+              <a href={employee.agreementUrl} target="_blank" rel="noopener noreferrer"
+                className="text-xs flex items-center gap-1 hover:opacity-80" style={{ color: 'var(--accent)' }}>
+                <FileText size={12} /> Agreement
+              </a>
+            )}
+          </div>
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--text-muted)' }}>Base per period</span>
@@ -167,6 +188,10 @@ export default function EmployeePayrollPage() {
                 <span className="font-medium">{fmt$(ps.hourlyBonusRate)}/hr past {ps.hourlyBonusThresholdMinutes}min</span>
               </div>
             )}
+            <div className="flex items-center justify-between">
+              <span style={{ color: 'var(--text-muted)' }}>Payment method</span>
+              <span className="font-medium">{methodLabel(ps.paymentMethod)}</span>
+            </div>
           </div>
           {ps.notes && (
             <p className="text-xs mt-4 pt-3" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>{ps.notes}</p>

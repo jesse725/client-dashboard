@@ -30,14 +30,17 @@ export async function POST(req: Request) {
   if (!name || !role || !email) {
     return NextResponse.json({ error: 'name, role, and email are required' }, { status: 400 });
   }
+  const paymentMethod = ['bank_transfer', 'wise', 'paypal', 'check', 'other'].includes(body.paymentMethod)
+    ? body.paymentMethod : 'bank_transfer';
 
   const db = getDb();
   try {
     const result = db.prepare(`
       INSERT INTO employees (
         name, role, email, active, base_amount_per_period, per_client_fee,
-        revenue_share_pct, hourly_bonus_rate, hourly_bonus_threshold_minutes, notes
-      ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+        revenue_share_pct, hourly_bonus_rate, hourly_bonus_threshold_minutes,
+        payment_method, agreement_url, notes
+      ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name, role, String(email).trim().toLowerCase(),
       Number(body.baseAmountPerPeriod) || 0,
@@ -45,6 +48,8 @@ export async function POST(req: Request) {
       Number(body.revenueSharePct) || 0,
       Number(body.hourlyBonusRate) || 0,
       Number(body.hourlyBonusThresholdMinutes) || 60,
+      paymentMethod,
+      body.agreementUrl || null,
       body.notes || null
     );
     return NextResponse.json({ id: result.lastInsertRowid });

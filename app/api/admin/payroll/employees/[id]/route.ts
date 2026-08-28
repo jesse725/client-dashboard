@@ -19,7 +19,10 @@ const ALLOWED_FIELDS: Record<string, string> = {
   baseAmountPerPeriod: 'base_amount_per_period', perClientFee: 'per_client_fee',
   revenueSharePct: 'revenue_share_pct', hourlyBonusRate: 'hourly_bonus_rate',
   hourlyBonusThresholdMinutes: 'hourly_bonus_threshold_minutes', notes: 'notes',
+  paymentMethod: 'payment_method', agreementUrl: 'agreement_url',
 };
+
+const VALID_PAYMENT_METHODS = ['bank_transfer', 'wise', 'paypal', 'check', 'other'];
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireFinancialAccess();
@@ -27,6 +30,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { id } = await params;
   const body = await req.json();
+  // payment_method has no DB-level CHECK (SQLite can't ALTER one in), so
+  // validate here instead.
+  if ('paymentMethod' in body && !VALID_PAYMENT_METHODS.includes(body.paymentMethod)) {
+    return NextResponse.json({ error: 'Invalid paymentMethod' }, { status: 400 });
+  }
   const updates: string[] = [];
   const values: any[] = [];
 

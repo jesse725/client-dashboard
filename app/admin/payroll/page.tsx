@@ -5,8 +5,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Users, Plus, ChevronDown, ChevronRight, CheckCircle2, Clock,
-  Download, Trash2, AlertTriangle,
+  Download, Trash2, AlertTriangle, FileText, Landmark,
 } from 'lucide-react';
+import { PAYMENT_METHODS } from '@/lib/payroll-constants';
+
+function methodLabel(value: string): string {
+  return PAYMENT_METHODS.find(m => m.value === value)?.label ?? value;
+}
 
 function fmt$(n: number) {
   return `$${Math.round(n).toLocaleString()}`;
@@ -37,6 +42,7 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
   const [form, setForm] = useState<any>(null);
   const [bonusDesc, setBonusDesc] = useState('');
   const [bonusAmount, setBonusAmount] = useState('');
+  const [showRecordPayment, setShowRecordPayment] = useState(false);
 
   const cp = employee.currentPeriod;
 
@@ -56,7 +62,9 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
       name: employee.name, role: employee.role, email: employee.email, active: !!employee.active,
       baseAmountPerPeriod: employee.base_amount_per_period, perClientFee: employee.per_client_fee,
       revenueSharePct: employee.revenue_share_pct, hourlyBonusRate: employee.hourly_bonus_rate,
-      hourlyBonusThresholdMinutes: employee.hourly_bonus_threshold_minutes, notes: employee.notes ?? '',
+      hourlyBonusThresholdMinutes: employee.hourly_bonus_threshold_minutes,
+      paymentMethod: employee.payment_method ?? 'bank_transfer', agreementUrl: employee.agreement_url ?? '',
+      notes: employee.notes ?? '',
     });
     setEditing(true);
   };
@@ -87,12 +95,6 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
     onChange();
   };
 
-  const markPaid = async () => {
-    if (!cp) return;
-    await fetch(`/api/admin/payroll/periods/${cp.id}/mark-paid`, { method: 'POST' });
-    loadDetail();
-    onChange();
-  };
 
   const undoPaid = async (periodId: number) => {
     await fetch(`/api/admin/payroll/periods/${periodId}/mark-paid`, { method: 'DELETE' });
@@ -149,7 +151,13 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                     <option value="0">Inactive (blocks login)</option>
                   </select>
                 </Field>
+                <Field label="Payment Method">
+                  <select className="input text-sm" value={form.paymentMethod} onChange={e => setForm({ ...form, paymentMethod: e.target.value })}>
+                    {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </Field>
               </div>
+              <Field label="Employment Agreement URL"><input className="input text-sm w-full" placeholder="Link to signed agreement (Drive, Dropbox, etc.)" value={form.agreementUrl} onChange={e => setForm({ ...form, agreementUrl: e.target.value })} /></Field>
               <Field label="Notes"><textarea className="input text-sm w-full" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setEditing(false)} className="btn-ghost text-sm">Cancel</button>
@@ -168,8 +176,17 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                   {employee.per_client_fee > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Per-client fee</span><span className="text-right font-medium">{fmt$(employee.per_client_fee)}</span></>)}
                   {employee.revenue_share_pct > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Revenue share</span><span className="text-right font-medium">{employee.revenue_share_pct}%</span></>)}
                   {employee.hourly_bonus_rate > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Hourly bonus</span><span className="text-right font-medium">{fmt$(employee.hourly_bonus_rate)}/hr past {employee.hourly_bonus_threshold_minutes}min</span></>)}
+                  <span style={{ color: 'var(--text-muted)' }} className="flex items-center gap-1"><Landmark size={12} /> Payment method</span>
+                  <span className="text-right font-medium">{methodLabel(employee.payment_method)}</span>
                 </div>
-                {employee.notes && <p className="text-xs mt-3 pt-2" style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>{employee.notes}</p>}
+                {employee.agreement_url && (
+                  <a href={employee.agreement_url} target="_blank" rel="noopener noreferrer"
+                    className="text-xs flex items-center gap-1.5 mt-3 pt-2 hover:opacity-80"
+                    style={{ color: 'var(--accent)', borderTop: '1px solid var(--border)' }}>
+                    <FileText size={12} /> View Employment Agreement
+                  </a>
+                )}
+                {employee.notes && <p className="text-xs mt-3 pt-2" style={{ color: 'var(--text-muted)', borderTop: employee.agreement_url ? 'none' : '1px solid var(--border)' }}>{employee.notes}</p>}
               </div>
 
               {cp && (
@@ -207,9 +224,20 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                     <button onClick={addBonus} className="btn-ghost text-xs px-3 shrink-0"><Plus size={13} /></button>
                   </div>
 
+                  {cp.status === 'paid' && cp.paymentRecords?.[0] && (
+                    <div className="text-xs p-2.5 rounded-lg mt-3 space-y-0.5" style={{ background: 'rgba(34,197,94,0.08)', color: 'var(--text-muted)' }}>
+                      <p>
+                        <span style={{ color: 'var(--green)' }}>Paid</span> via {methodLabel(cp.paymentRecords[0].method)} on {fmtDate(cp.paymentRecords[0].paid_at.slice(0, 10))}
+                        {cp.paymentRecords[0].reference && ` · ref: ${cp.paymentRecords[0].reference}`}
+                      </p>
+                      <p>recorded by {cp.paymentRecords[0].recorded_by}</p>
+                      {cp.paymentRecords[0].notes && <p>{cp.paymentRecords[0].notes}</p>}
+                    </div>
+                  )}
+
                   <div className="mt-3">
                     {cp.status === 'pending' ? (
-                      <button onClick={markPaid} className="btn-primary text-sm w-full">Mark Period as Paid</button>
+                      <button onClick={() => setShowRecordPayment(true)} className="btn-primary text-sm w-full">Record Payment</button>
                     ) : (
                       <button onClick={() => undoPaid(cp.id)} className="btn-ghost text-sm w-full">Undo — Mark as Pending</button>
                     )}
@@ -223,7 +251,12 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
                   <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
                     {detail.periods.slice(1).map((p: any) => (
                       <div key={p.id} className="px-4 py-2 flex items-center justify-between text-sm">
-                        <span>{fmtDate(p.payout_date)}</span>
+                        <div>
+                          <p>{fmtDate(p.payout_date)}</p>
+                          {p.paymentRecords?.[0] && (
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>via {methodLabel(p.paymentRecords[0].method)}</p>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2">
                           <StatusPill status={p.status} />
                           <span className="font-medium w-14 text-right">{fmt$(p.totalAmount)}</span>
@@ -237,6 +270,58 @@ function EmployeeCard({ employee, onChange }: { employee: any; onChange: () => v
           )}
         </div>
       )}
+
+      {showRecordPayment && cp && (
+        <RecordPaymentModal
+          period={cp}
+          defaultMethod={employee.payment_method ?? 'bank_transfer'}
+          onClose={() => setShowRecordPayment(false)}
+          onSaved={() => { setShowRecordPayment(false); loadDetail(); onChange(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RecordPaymentModal({ period, defaultMethod, onClose, onSaved }: {
+  period: any; defaultMethod: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [amount, setAmount] = useState(String(period.totalAmount));
+  const [method, setMethod] = useState(defaultMethod);
+  const [reference, setReference] = useState('');
+  const [notes, setNotes] = useState('');
+  const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    await fetch(`/api/admin/payroll/periods/${period.id}/mark-paid`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Number(amount), method, reference, notes, paidAt }),
+    });
+    onSaved();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="card p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold mb-4">Record Payment</h3>
+        <div className="space-y-3">
+          <Field label="Amount ($)"><input type="number" className="input w-full text-sm" value={amount} onChange={e => setAmount(e.target.value)} /></Field>
+          <Field label="Method">
+            <select className="input w-full text-sm" value={method} onChange={e => setMethod(e.target.value)}>
+              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Date Paid"><input type="date" className="input w-full text-sm" value={paidAt} onChange={e => setPaidAt(e.target.value)} /></Field>
+          <Field label="Reference (optional)"><input className="input w-full text-sm" placeholder="Confirmation #, transfer ID, etc." value={reference} onChange={e => setReference(e.target.value)} /></Field>
+          <Field label="Notes (optional)"><textarea className="input w-full text-sm" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="btn-ghost text-sm">Cancel</button>
+          <button onClick={save} disabled={saving} className="btn-primary text-sm">{saving ? 'Saving…' : 'Record Payment'}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -251,7 +336,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: '', role: '', email: '', baseAmountPerPeriod: '' });
+  const [form, setForm] = useState({ name: '', role: '', email: '', baseAmountPerPeriod: '', paymentMethod: 'bank_transfer' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -281,6 +366,9 @@ function AddEmployeeModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <input className="input w-full text-sm" placeholder="Role / Title (e.g. Media Buyer)" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} />
           <input className="input w-full text-sm" type="email" placeholder="Email (used to log in)" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
           <input className="input w-full text-sm" type="number" placeholder="Base $ per period" value={form.baseAmountPerPeriod} onChange={e => setForm({ ...form, baseAmountPerPeriod: e.target.value })} />
+          <select className="input w-full text-sm" value={form.paymentMethod} onChange={e => setForm({ ...form, paymentMethod: e.target.value })}>
+            {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
         </div>
         {error && <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>{error}</p>}
         <div className="flex justify-end gap-2 mt-4">

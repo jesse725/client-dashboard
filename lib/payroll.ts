@@ -1,5 +1,8 @@
 import { getDb } from './db';
-import type { Employee, PayPeriodWithTotal } from '@/types';
+import type { Employee, PayPeriodWithTotal, PaymentMethod } from '@/types';
+import { PAYMENT_METHODS } from './payroll-constants';
+
+export { PAYMENT_METHODS };
 
 // ── Payout schedule ─────────────────────────────────────────────────────────
 // Semi-monthly: paid on the 14th and 28th of every month (24 payouts/year —
@@ -134,8 +137,39 @@ export function getPeriodWithTotal(periodId: number): PayPeriodWithTotal | undef
   const period = db.prepare('SELECT * FROM pay_periods WHERE id = ?').get(periodId) as any;
   if (!period) return undefined;
   const bonusItems = db.prepare('SELECT * FROM pay_period_bonuses WHERE pay_period_id = ? ORDER BY added_at').all(periodId) as any[];
+  const paymentRecords = db.prepare('SELECT * FROM payment_records WHERE pay_period_id = ? ORDER BY paid_at DESC, id DESC').all(periodId) as any[];
   const totalAmount = period.base_amount + bonusItems.reduce((s, b) => s + b.amount, 0);
-  return { ...period, bonusItems, totalAmount };
+  return { ...period, bonusItems, paymentRecords, totalAmount };
+}
+
+export interface RecordPaymentInput {
+  amount: number;
+  method: PaymentMethod;
+  reference?: string | null;
+  notes?: string | null;
+  paidAt?: string; // YYYY-MM-DD, defaults to today
+  recordedBy?: string | null;
+}
+
+// Logs a payment record (kept permanently, even across an undo) and marks the
+// period paid. A period can end up with more than one record if it was
+// undone and paid again — that's a feature, not a bug, for "what actually
+// happened" history.
+export function recordPayment(periodId: number, input: RecordPaymentInput) {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO payment_records (pay_period_id, amount, method, reference, notes, paid_at, recorded_by)
+    VALUES (?, ?, ?, ?, ?, COALESCE(?, date('now')), ?)
+  `).run(periodId, input.amount, input.method, input.reference || null, input.notes || null, input.paidAt || null, input.recordedBy || null);
+
+  db.prepare("UPDATE pay_periods SET status = 'paid', paid_at = datetime('now') WHERE id = ?").run(periodId);
+}
+
+// Reverts a period to pending. Does NOT delete payment_records — the ledger
+// stays intact so a mistaken mark-paid still leaves a trace of what happened.
+export function undoPayment(periodId: number) {
+  const db = getDb();
+  db.prepare("UPDATE pay_periods SET status = 'pending', paid_at = NULL WHERE id = ?").run(periodId);
 }
 
 export function getPeriodsForEmployee(employeeId: number): PayPeriodWithTotal[] {

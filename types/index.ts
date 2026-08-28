@@ -51,6 +51,8 @@ export interface User {
   name: string;
 }
 
+export type PaymentMethod = 'bank_transfer' | 'wise' | 'paypal' | 'check' | 'other';
+
 export interface Employee {
   id: number;
   name: string;
@@ -62,6 +64,8 @@ export interface Employee {
   revenue_share_pct: number;
   hourly_bonus_rate: number;
   hourly_bonus_threshold_minutes: number;
+  payment_method: PaymentMethod;
+  agreement_url: string | null; // link to the signed employment agreement (Drive/Dropbox/etc.)
   notes: string | null;
   created_at: string;
 }
@@ -73,6 +77,20 @@ export interface PayPeriodBonus {
   amount: number;
   added_by: string | null;
   added_at: string;
+}
+
+// One row per actual payment made — kept even if the period is later
+// un-marked-paid, so the history is never lost, just no longer "current."
+export interface PaymentRecord {
+  id: number;
+  pay_period_id: number;
+  amount: number;
+  method: PaymentMethod;
+  reference: string | null;
+  notes: string | null;
+  paid_at: string;
+  recorded_by: string | null;
+  created_at: string;
 }
 
 export interface PayPeriod {
@@ -89,6 +107,7 @@ export interface PayPeriod {
 
 export interface PayPeriodWithTotal extends PayPeriod {
   bonusItems: PayPeriodBonus[];
+  paymentRecords: PaymentRecord[];
   totalAmount: number; // base_amount + sum(bonusItems) — always computed, never stored
 }
 

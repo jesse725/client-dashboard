@@ -327,7 +327,28 @@ function initSchema(db: Database.Database) {
       added_by TEXT,
       added_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- One row per actual payment event, kept even if the period is later
+    -- un-marked-paid — a genuine ledger rather than a single overwritable
+    -- status flag, so "was this ever paid, how, and when" is never lost.
+    CREATE TABLE IF NOT EXISTS payment_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pay_period_id INTEGER NOT NULL REFERENCES pay_periods(id) ON DELETE CASCADE,
+      amount REAL NOT NULL,
+      method TEXT NOT NULL DEFAULT 'bank_transfer',
+      reference TEXT,
+      notes TEXT,
+      paid_at TEXT NOT NULL DEFAULT (date('now')),
+      recorded_by TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
+
+  // Migrations for employees table — must run after the block above, since
+  // that's where the table itself is first created.
+  const employeeCols = (db.prepare("PRAGMA table_info(employees)").all() as any[]).map((c: any) => c.name);
+  if (!employeeCols.includes('payment_method')) db.exec("ALTER TABLE employees ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'bank_transfer'");
+  if (!employeeCols.includes('agreement_url')) db.exec('ALTER TABLE employees ADD COLUMN agreement_url TEXT');
 
   seedPayrollData(db);
   seedIncomeData(db);

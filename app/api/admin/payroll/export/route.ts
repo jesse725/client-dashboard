@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { PAYMENT_METHODS } from '@/lib/payroll';
 
 function csvEscape(value: string): string {
   if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
+}
+
+function methodLabel(value: string): string {
+  return PAYMENT_METHODS.find(m => m.value === value)?.label ?? value;
 }
 
 // Columns are a best-effort guess at what's useful for manual entry into
@@ -22,7 +27,7 @@ export async function GET(req: Request) {
 
   const db = getDb();
   const periods = db.prepare(`
-    SELECT pp.id, pp.base_amount, e.name, e.email
+    SELECT pp.id, pp.base_amount, e.name, e.email, e.payment_method
     FROM pay_periods pp
     JOIN employees e ON e.id = pp.employee_id
     WHERE pp.payout_date = ? AND pp.status = 'pending'
@@ -32,10 +37,12 @@ export async function GET(req: Request) {
   const rows = periods.map(p => {
     const bonusTotal = (db.prepare('SELECT COALESCE(SUM(amount),0) AS s FROM pay_period_bonuses WHERE pay_period_id = ?').get(p.id) as any).s;
     const total = p.base_amount + bonusTotal;
-    return { name: p.name, email: p.email, amount: total };
+    return { name: p.name, email: p.email, amount: total, method: p.payment_method };
   });
 
-  const header = ['Recipient Name', 'Recipient Email', 'Amount', 'Currency', 'Reference'];
+  // Payment Method is included so it's obvious at a glance who ISN'T a
+  // standard bank transfer and needs to be routed differently.
+  const header = ['Recipient Name', 'Recipient Email', 'Amount', 'Currency', 'Payment Method', 'Reference'];
   const lines = [header.join(',')];
   for (const r of rows) {
     lines.push([
@@ -43,6 +50,7 @@ export async function GET(req: Request) {
       csvEscape(r.email),
       r.amount.toFixed(2),
       'USD',
+      csvEscape(methodLabel(r.method)),
       csvEscape(`Payroll ${payoutDate}`),
     ].join(','));
   }
