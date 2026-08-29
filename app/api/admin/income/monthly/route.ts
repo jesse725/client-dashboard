@@ -4,6 +4,7 @@ import {
   getWhopRevenueByMonth, getMetaSpendByMonth, getResolvedItems, sumResolvedItems, getEntriesForMonth, listCycleMonths,
   getMonthlyOverrides, resolveMonthValue,
 } from '@/lib/income';
+import { getHumanLaborForMonth } from '@/lib/payroll';
 
 export async function GET(req: Request) {
   const auth = await requireFinancialAccess();
@@ -27,22 +28,22 @@ export async function GET(req: Request) {
   const resolveAdSpend = (m: string) => resolveMonthValue(m, adSpendByMonth[m], metaWarning === null, adSpendOverrides);
 
   const subscriptions = getResolvedItems(month, 'subscription');
-  const payroll = getResolvedItems(month, 'payroll');
   const recurringSubscriptions = subscriptions.reduce((s, i) => s + i.amount, 0);
-  const employeeCosts = payroll.reduce((s, i) => s + i.amount, 0);
+  const humanLabor = getHumanLaborForMonth(month);
 
   const revenue = resolveRevenue(month);
   const adSpend = resolveAdSpend(month);
-  const pnl = computeMonthPnL(month, revenue.amount, adSpend.amount, recurringSubscriptions, employeeCosts, revenue.source, adSpend.source);
+  const pnl = computeMonthPnL(month, revenue.amount, adSpend.amount, recurringSubscriptions, humanLabor.total, revenue.source, adSpend.source);
 
   // Cumulative profit from cycle start through the selected month — each prior
-  // month uses its own resolved subscription/payroll/revenue/ad spend, not this month's.
+  // month uses its own resolved subscription/human-labor/revenue/ad spend,
+  // not this month's.
   let cumulativeProfit = 0;
   for (const m of months) {
     if (m > month) break;
     const r = resolveRevenue(m);
     const a = resolveAdSpend(m);
-    const p = computeMonthPnL(m, r.amount, a.amount, sumResolvedItems(m, 'subscription'), sumResolvedItems(m, 'payroll'), r.source, a.source);
+    const p = computeMonthPnL(m, r.amount, a.amount, sumResolvedItems(m, 'subscription'), getHumanLaborForMonth(m).total, r.source, a.source);
     cumulativeProfit += p.netProfit;
   }
 
@@ -55,7 +56,7 @@ export async function GET(req: Request) {
     month, label: monthLabel(month),
     availableMonths: months,
     pnl, cumulativeProfit,
-    subscriptions, payroll,
+    subscriptions, humanLaborItems: humanLabor.items,
     otherExpenseEntries, startupFundEntries,
     warnings,
   });

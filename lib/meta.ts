@@ -111,8 +111,10 @@ export async function fetchMetaAdSpendRange(
   return parseFloat(json.data?.[0]?.spend ?? '0');
 }
 
-// One request for a whole range, broken into calendar-month buckets via
-// time_increment=monthly — avoids N separate calls for an N-month trend.
+// One request per page for a whole range, broken into calendar-month buckets
+// via time_increment=monthly — avoids N separate calls for an N-month trend.
+// Paginates like fetchMetaAdLevelStats does — a range long enough to span
+// many months could otherwise silently lose the later ones past page 1.
 export async function fetchMetaSpendByMonth(
   accessToken: string,
   adAccountId: string,
@@ -121,16 +123,21 @@ export async function fetchMetaSpendByMonth(
 ): Promise<{ month: string; spend: number }[]> {
   const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
   const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
-  const url = `${META_BASE}/${account}/insights?fields=spend&time_range=${timeRange}&time_increment=monthly&access_token=${accessToken}`;
+  const results: { month: string; spend: number }[] = [];
+  let url = `${META_BASE}/${account}/insights?fields=spend&time_range=${timeRange}&time_increment=monthly&limit=200&access_token=${accessToken}`;
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Meta API ${res.status}: ${text}`);
+  while (url) {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Meta API ${res.status}: ${text}`);
+    }
+    const json = await res.json();
+    for (const d of json.data ?? []) {
+      results.push({ month: String(d.date_start).slice(0, 7), spend: parseFloat(d.spend ?? '0') });
+    }
+    url = json.paging?.next ?? '';
   }
-  const json = await res.json();
-  return (json.data ?? []).map((d: any) => ({
-    month: String(d.date_start).slice(0, 7), // YYYY-MM
-    spend: parseFloat(d.spend ?? '0'),
-  }));
+
+  return results;
 }

@@ -47,19 +47,75 @@ function Warnings({ warnings }: { warnings: { source: string; message: string }[
   );
 }
 
-function Row({ label, value, bold, muted, color, sub, emphasize }: {
-  label: string; value: string; bold?: boolean; muted?: boolean; color?: string; sub?: string; emphasize?: boolean;
+function Row({ label, value, bold, muted, color, sub, emphasize, indent, bg }: {
+  label: string; value: string; bold?: boolean; muted?: boolean; color?: string; sub?: string; emphasize?: boolean; indent?: number; bg?: string;
 }) {
   return (
     <div
       className="px-4 py-2.5 flex items-center justify-between"
-      style={emphasize ? { borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 } : undefined}
+      style={{
+        paddingLeft: indent ? 16 + indent * 16 : undefined,
+        background: bg,
+        ...(emphasize ? { borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 } : {}),
+      }}
     >
       <div>
         <span className={bold ? 'font-semibold' : ''} style={{ color: muted ? 'var(--text-muted)' : undefined }}>{label}</span>
         {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
       </div>
       <span className={bold ? 'font-bold' : ''} style={{ color: color ?? (muted ? 'var(--text-muted)' : undefined) }}>{value}</span>
+    </div>
+  );
+}
+
+// Small uppercase section header — REVENUE / COST OF GOODS SOLD / OPERATING
+// EXPENSES — giving each MonthCard the section structure of an actual
+// income statement instead of a flat stat list. A top rule separates it from
+// the section above (skipped for the very first section in a card).
+function SectionLabel({ children, first }: { children: React.ReactNode; first?: boolean }) {
+  return (
+    <p
+      className="px-4 pb-1 text-[10px] font-bold uppercase tracking-wider"
+      style={{
+        color: 'var(--text-muted)',
+        paddingTop: first ? 12 : 20,
+        borderTop: first ? undefined : '1px solid var(--border)',
+        marginTop: first ? 0 : 4,
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+// Itemized Human Labor line — real employees pulled live from the Payroll
+// Dashboard (pay_periods/payment_records), not a manually-maintained roster.
+// Read-only here on purpose: editing an employee's rate or bonuses happens in
+// Payroll itself so there's exactly one place that number can be changed.
+function HumanLaborBreakdown({ items, total }: {
+  items: { employeeId: number; name: string; role: string; amount: number }[]; total: number;
+}) {
+  return (
+    <div>
+      <div className="px-4 py-2.5 flex items-center justify-between">
+        <div>
+          <span className="font-semibold">Human Labor</span>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            synced from <Link href="/admin/payroll" className="underline hover:opacity-80">Payroll Dashboard</Link>
+          </p>
+        </div>
+        <span className="font-semibold">{fmt$(total)}</span>
+      </div>
+      {items.length === 0 ? (
+        <p className="px-4 pb-2.5 text-xs" style={{ color: 'var(--text-muted)', paddingLeft: 32 }}>No active employees.</p>
+      ) : (
+        items.map(i => (
+          <div key={i.employeeId} className="px-4 py-1.5 flex items-center justify-between text-sm" style={{ paddingLeft: 32 }}>
+            <span style={{ color: 'var(--text-muted)' }}>{i.name} <span className="text-xs">— {i.role}</span></span>
+            <span style={{ color: 'var(--text-muted)' }}>{fmt$(i.amount)}</span>
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -297,39 +353,42 @@ function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defa
           {loadingDetail || !detail ? (
             <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>Loading…</p>
           ) : (
-            <div className="p-3 space-y-3">
-              <div className="divide-y text-sm" style={{ borderColor: 'var(--border)' }}>
-                <EditableAmountRow
-                  label="Revenue" amount={pnl.revenue} source={pnl.revenueSource}
-                  sub="net, from Whop — Whop's own fee already deducted"
-                  onSave={v => setOverride('revenue', v)} onRevert={() => revertOverride('revenue')}
-                />
-                <EditableAmountRow
-                  label="Ad Spend (COGS)" amount={pnl.adSpend} source={pnl.adSpendSource}
-                  onSave={v => setOverride('adSpend', v)} onRevert={() => revertOverride('adSpend')}
-                />
-                <Row label="Gross Profit" value={fmt$(pnl.grossProfit)} bold color="#0891b2" />
-                <Row label="Gross Margin" value={pct(pnl.grossMarginPct)} muted />
-                <Row label="Recurring Subscriptions" value={`(${fmt$(pnl.recurringSubscriptions)})`} muted sub="editable below" />
-                <Row label="Employee Costs" value={`(${fmt$(pnl.employeeCosts)})`} muted sub="editable below" />
-                <Row label="Other Operating Expenses" value={`(${fmt$(pnl.otherExpenses)})`} muted />
-                <Row label="Total Operating Expenses" value={fmt$(pnl.totalOperatingExpenses)} bold />
-                <Row label="Net Profit" value={fmt$(pnl.netProfit)} bold color={accentColor} emphasize />
-                <Row label="Profit Margin" value={pct(pnl.profitMarginPct)} muted />
-                <Row label="ROAS" value={pnl.roas != null ? `${pnl.roas.toFixed(2)}x` : '—'} muted />
-                <Row label="Startup Fund Draws" value={fmt$(pnl.startupFundDraws)} muted sub="excluded from Net Profit — one-time seed capital" />
-              </div>
+            <div className="py-2 text-sm">
+              <SectionLabel first>Revenue</SectionLabel>
+              <EditableAmountRow
+                label="Net Revenue (Whop)" amount={pnl.revenue} source={pnl.revenueSource}
+                sub="net, from Whop — Whop's own fee already deducted"
+                onSave={v => setOverride('revenue', v)} onRevert={() => revertOverride('revenue')}
+              />
 
-              <MonthlyItemSection title="Subscriptions" items={detail.subscriptions} onSave={setItemMonth} />
-              <MonthlyItemSection title="Payroll" items={detail.payroll} onSave={setItemMonth} />
+              <SectionLabel>Cost of Goods Sold</SectionLabel>
+              <EditableAmountRow
+                label="Ad Spend (Meta)" amount={pnl.adSpend} source={pnl.adSpendSource}
+                onSave={v => setOverride('adSpend', v)} onRevert={() => revertOverride('adSpend')}
+              />
+              <Row label="Gross Profit" value={fmt$(pnl.grossProfit)} bold color="#0891b2" emphasize />
+              <Row label="Gross Margin" value={pct(pnl.grossMarginPct)} muted indent={1} />
+
+              <SectionLabel>Operating Expenses</SectionLabel>
+              <HumanLaborBreakdown items={detail.humanLaborItems ?? []} total={pnl.employeeCosts} />
+              <MonthlyItemSection title="Recurring Subscriptions" items={detail.subscriptions} onSave={setItemMonth} bare />
               <EntrySection
                 title="Other Operating Expenses" entries={detail.otherExpenseEntries} category="other" month={month.month}
-                onAdd={() => setShowAddEntry('other')} onChange={() => { loadDetail(); onEntryChange(); }}
+                onAdd={() => setShowAddEntry('other')} onChange={() => { loadDetail(); onEntryChange(); }} bare
               />
-              <EntrySection
-                title="Startup Fund Draws" entries={detail.startupFundEntries} category="startup_fund" month={month.month}
-                onAdd={() => setShowAddEntry('startup_fund')} onChange={() => { loadDetail(); onEntryChange(); }}
-              />
+              <Row label="Total Operating Expenses" value={`(${fmt$(pnl.totalOperatingExpenses)})`} bold emphasize />
+
+              <SectionLabel>Net Profit</SectionLabel>
+              <Row label="Net Profit" value={fmt$(pnl.netProfit)} bold color={accentColor} bg={pnl.netProfit >= 0 ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'} />
+              <Row label="Profit Margin" value={pct(pnl.profitMarginPct)} muted indent={1} />
+              <Row label="ROAS" value={pnl.roas != null ? `${pnl.roas.toFixed(2)}x` : '—'} muted indent={1} />
+
+              <div style={{ marginTop: 8 }}>
+                <EntrySection
+                  title="Startup Fund Draws (excluded from Net Profit)" entries={detail.startupFundEntries} category="startup_fund" month={month.month}
+                  onAdd={() => setShowAddEntry('startup_fund')} onChange={() => { loadDetail(); onEntryChange(); }} bare
+                />
+              </div>
 
               {showAddEntry && (
                 <AddEntryModal
@@ -346,82 +405,92 @@ function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defa
   );
 }
 
-function MonthlyItemSection({ title, items, onSave }: {
-  title: string; items: any[]; onSave: (itemId: number, amount: number) => void;
+function MonthlyItemSection({ title, items, onSave, bare }: {
+  title: string; items: any[]; onSave: (itemId: number, amount: number) => void; bare?: boolean;
 }) {
   const total = items.reduce((s, i) => s + i.amount, 0);
-  return (
-    <div className="card overflow-hidden">
-      <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-        <p className="font-semibold text-sm">{title}</p>
-        <span className="text-sm font-semibold">{fmt$(total)}</span>
-      </div>
-      {items.length === 0 ? (
-        <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>Nothing here yet — add items in Subscriptions.</p>
-      ) : (
-        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-          {items.map((item: any) => (
-            <div key={item.id} className="px-4 py-2.5 flex items-center justify-between text-sm gap-3">
-              <div className="min-w-0">
-                <span className="font-medium truncate">{item.name}</span>
-                {item.isOverride && (
-                  <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--accent)' }}>edited this month</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <input
-                  type="number"
-                  defaultValue={item.amount}
-                  key={item.amount}
-                  onBlur={e => {
-                    const v = Number(e.target.value);
-                    if (v !== item.amount) onSave(item.id, v);
-                  }}
-                  className="input text-sm w-24 text-right"
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+  const header = (
+    <div
+      className={bare ? 'px-4 py-2.5 flex items-center justify-between' : 'px-4 py-3 border-b flex items-center justify-between'}
+      style={bare ? undefined : { borderColor: 'var(--border)', background: 'var(--surface-2)' }}
+    >
+      <p className={bare ? 'font-semibold' : 'font-semibold text-sm'}>{title}</p>
+      <span className="text-sm font-semibold">{fmt$(total)}</span>
     </div>
   );
+  const body = items.length === 0 ? (
+    <p className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)', paddingLeft: bare ? 32 : undefined }}>Nothing here yet — add items in Subscriptions.</p>
+  ) : (
+    <div className={bare ? undefined : 'divide-y'} style={bare ? undefined : { borderColor: 'var(--border)' }}>
+      {items.map((item: any) => (
+        <div key={item.id} className="px-4 py-1.5 flex items-center justify-between text-sm gap-3" style={{ paddingLeft: bare ? 32 : undefined }}>
+          <div className="min-w-0">
+            <span className={bare ? undefined : 'font-medium truncate'} style={bare ? { color: 'var(--text-muted)' } : undefined}>{item.name}</span>
+            {item.isOverride && (
+              <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--accent)' }}>edited this month</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="number"
+              defaultValue={item.amount}
+              key={item.amount}
+              onBlur={e => {
+                const v = Number(e.target.value);
+                if (v !== item.amount) onSave(item.id, v);
+              }}
+              className="input text-sm w-24 text-right"
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  if (bare) return <div>{header}{body}</div>;
+  return <div className="card overflow-hidden">{header}{body}</div>;
 }
 
-function EntrySection({ title, entries, category, month, onAdd, onChange }: {
-  title: string; entries: any[]; category: string; month: string; onAdd: () => void; onChange: () => void;
+function EntrySection({ title, entries, category, month, onAdd, onChange, bare }: {
+  title: string; entries: any[]; category: string; month: string; onAdd: () => void; onChange: () => void; bare?: boolean;
 }) {
   const del = async (id: number) => {
     await fetch(`/api/admin/income/entries/${id}`, { method: 'DELETE' });
     onChange();
   };
-  return (
-    <div className="card overflow-hidden">
-      <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-        <p className="font-semibold text-sm">{title}</p>
+  const total = entries.reduce((s, e) => s + e.amount, 0);
+  const header = (
+    <div
+      className={bare ? 'px-4 py-2.5 flex items-center justify-between' : 'px-4 py-3 border-b flex items-center justify-between'}
+      style={bare ? undefined : { borderColor: 'var(--border)', background: 'var(--surface-2)' }}
+    >
+      <p className={bare ? 'font-semibold' : 'font-semibold text-sm'}>{title}</p>
+      <div className="flex items-center gap-3">
+        {bare && <span className="text-sm font-semibold">{fmt$(total)}</span>}
         <button onClick={onAdd} className="btn-ghost text-xs flex items-center gap-1"><Plus size={12} /> Add</button>
       </div>
-      {entries.length === 0 ? (
-        <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>No entries for this month.</p>
-      ) : (
-        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-          {entries.map(e => (
-            <div key={e.id} className="px-4 py-2.5 flex items-center justify-between text-sm">
-              <div>
-                <span className="font-medium">{e.name}</span>
-                <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{e.date}</span>
-                {e.notes && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{e.notes}</p>}
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-semibold">{fmt$(e.amount)}</span>
-                <button onClick={() => del(e.id)} className="opacity-50 hover:opacity-100"><Trash2 size={14} /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
+  const body = entries.length === 0 ? (
+    <p className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)', paddingLeft: bare ? 32 : undefined }}>No entries for this month.</p>
+  ) : (
+    <div className={bare ? undefined : 'divide-y'} style={bare ? undefined : { borderColor: 'var(--border)' }}>
+      {entries.map(e => (
+        <div key={e.id} className="px-4 py-1.5 flex items-center justify-between text-sm" style={{ paddingLeft: bare ? 32 : undefined }}>
+          <div>
+            <span className={bare ? undefined : 'font-medium'} style={bare ? { color: 'var(--text-muted)' } : undefined}>{e.name}</span>
+            <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{e.date}</span>
+            {e.notes && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{e.notes}</p>}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className={bare ? undefined : 'font-semibold'} style={bare ? { color: 'var(--text-muted)' } : undefined}>{fmt$(e.amount)}</span>
+            <button onClick={() => del(e.id)} className="opacity-50 hover:opacity-100"><Trash2 size={14} /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  if (bare) return <div>{header}{body}</div>;
+  return <div className="card overflow-hidden">{header}{body}</div>;
 }
 
 function AddEntryModal({ category, month, onClose, onSaved }: {
@@ -484,7 +553,7 @@ function AddEntryModal({ category, month, onClose, onSaved }: {
 function SubscriptionsView() {
   const [monthly, setMonthly] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [showAddItem, setShowAddItem] = useState<'subscription' | 'payroll' | null>(null);
+  const [showAddItem, setShowAddItem] = useState(false);
 
   const load = useCallback(() => {
     fetch('/api/admin/income/monthly').then(r => r.json()).then(d => { setMonthly(d); setLoading(false); });
@@ -495,9 +564,9 @@ function SubscriptionsView() {
   if (loading || !monthly) return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>;
 
   const subscriptions = monthly.subscriptions ?? [];
-  const payroll = monthly.payroll ?? [];
+  const humanLaborItems = monthly.humanLaborItems ?? [];
   const subsTotal = subscriptions.reduce((s: number, i: any) => s + i.amount, 0);
-  const payrollTotal = payroll.reduce((s: number, i: any) => s + i.amount, 0);
+  const humanLaborTotal = humanLaborItems.reduce((s: number, i: any) => s + i.amount, 0);
 
   const remove = async (id: number) => {
     await fetch(`/api/admin/income/items/${id}`, { method: 'DELETE' });
@@ -511,15 +580,39 @@ function SubscriptionsView() {
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <StatCard label="Software Subscriptions" value={fmt$(subsTotal)} sub={`${subscriptions.length} active · ${fmt$(subsTotal * 12)}/yr`} color="#0d9488" icon={<Layers size={16} />} />
-        <StatCard label="Human Labor (Payroll)" value={fmt$(payrollTotal)} sub={`${payroll.length} active · ${fmt$(payrollTotal * 12)}/yr`} color="#6c63ff" icon={<Users size={16} />} />
+        <StatCard label="Human Labor (Payroll)" value={fmt$(humanLaborTotal)} sub={`${humanLaborItems.length} active · ${fmt$(humanLaborTotal * 12)}/yr`} color="#6c63ff" icon={<Users size={16} />} />
         <StatCard label="Ad Spend" value={fmt$(monthly.pnl?.adSpend ?? 0)} sub={`live, ${monthly.label}`} color="#f59e0b" icon={<TrendingDown size={16} />} />
       </div>
 
-      <ItemTable title="Software & Subscriptions" items={subscriptions} onAdd={() => setShowAddItem('subscription')} onDelete={remove} />
-      <ItemTable title="Human Labor / Payroll" items={payroll} onAdd={() => setShowAddItem('payroll')} onDelete={remove} />
+      <ItemTable title="Software & Subscriptions" items={subscriptions} onAdd={() => setShowAddItem(true)} onDelete={remove} />
+
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center justify-between gap-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+          <div>
+            <p className="font-semibold text-sm">Human Labor / Payroll</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Synced live from the Payroll Dashboard — read-only here.</p>
+          </div>
+          <Link href="/admin/payroll" className="btn-ghost text-xs flex items-center gap-1 shrink-0"><Users size={12} /> Manage in Payroll →</Link>
+        </div>
+        {humanLaborItems.length === 0 ? (
+          <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>No active employees yet — add one in the Payroll Dashboard.</p>
+        ) : (
+          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+            {humanLaborItems.map((item: any) => (
+              <div key={item.employeeId} className="px-4 py-2.5 flex items-center justify-between text-sm gap-3">
+                <div className="min-w-0">
+                  <span className="font-medium truncate">{item.name}</span>
+                  <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{item.role}</span>
+                </div>
+                <span className="font-semibold shrink-0">{fmt$(item.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {showAddItem && (
-        <AddItemModal category={showAddItem} onClose={() => setShowAddItem(null)} onSaved={() => { setShowAddItem(null); load(); }} />
+        <AddItemModal category="subscription" onClose={() => setShowAddItem(false)} onSaved={() => { setShowAddItem(false); load(); }} />
       )}
     </div>
   );
@@ -554,7 +647,7 @@ function ItemTable({ title, items, onAdd, onDelete }: {
   );
 }
 
-function AddItemModal({ category, onClose, onSaved }: { category: 'subscription' | 'payroll'; onClose: () => void; onSaved: () => void }) {
+function AddItemModal({ category, onClose, onSaved }: { category: 'subscription'; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
@@ -572,7 +665,7 @@ function AddItemModal({ category, onClose, onSaved }: { category: 'subscription'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
       <div className="card p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold mb-4">Add {category === 'subscription' ? 'Subscription' : 'Payroll'}</h3>
+        <h3 className="font-semibold mb-4">Add Subscription</h3>
         <div className="space-y-3">
           <input className="input w-full text-sm" placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
           <input className="input w-full text-sm" type="number" placeholder="Monthly amount" value={amount} onChange={e => setAmount(e.target.value)} />

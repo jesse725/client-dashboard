@@ -185,3 +185,25 @@ export function ensureCurrentPeriod(employeeId: number): number {
   const bounds = getPeriodForDate(new Date());
   return ensurePeriod(employeeId, bounds);
 }
+
+export interface HumanLaborItem { employeeId: number; name: string; role: string; amount: number }
+
+// Real payroll cost for a calendar month — sums BOTH semi-monthly periods
+// (the 14th and 28th payouts that fall in this month) for every active
+// employee, using their actual recorded totals (base + any bonuses logged
+// that period), not an estimate. This is the source of truth Income
+// Statement's Human Labor line syncs to, replacing the old manually-entered
+// expense_items('payroll') roster.
+export function getHumanLaborForMonth(month: string): { total: number; items: HumanLaborItem[] } {
+  const [y, m] = month.split('-').map(Number);
+  const period1Bounds = getPeriodForDate(new Date(y, m - 1, 10)); // day 10 -> first half (14th payout)
+  const period2Bounds = getPeriodForDate(new Date(y, m - 1, 20)); // day 20 -> second half (28th payout)
+
+  const items: HumanLaborItem[] = getActiveEmployees().map(emp => {
+    const p1 = getPeriodWithTotal(ensurePeriod(emp.id, period1Bounds))!;
+    const p2 = getPeriodWithTotal(ensurePeriod(emp.id, period2Bounds))!;
+    return { employeeId: emp.id, name: emp.name, role: emp.role, amount: p1.totalAmount + p2.totalAmount };
+  });
+
+  return { total: items.reduce((s, i) => s + i.amount, 0), items };
+}

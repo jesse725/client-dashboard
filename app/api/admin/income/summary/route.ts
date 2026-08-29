@@ -5,6 +5,7 @@ import {
   getWhopRevenueByMonth, getMetaSpendByMonth, sumResolvedItems,
   getMonthlyOverrides, resolveMonthValue,
 } from '@/lib/income';
+import { getHumanLaborForMonth } from '@/lib/payroll';
 
 export async function GET() {
   const auth = await requireFinancialAccess();
@@ -22,16 +23,18 @@ export async function GET() {
   const revenueOverrides = getMonthlyOverrides('revenue');
   const adSpendOverrides = getMonthlyOverrides('adSpend');
 
-  // Subscriptions/payroll are resolved per month (carry-forward from the most
-  // recent edit), so each month in the trend can differ if it was edited.
-  // Revenue/Ad Spend prefer a manual override for that month, falling back to
-  // the live Whop/Meta figure.
+  // Subscriptions are resolved per month (carry-forward from the most recent
+  // edit); Human Labor is synced live from the real Payroll dashboard (actual
+  // recorded pay periods, not a separately-maintained estimate). Revenue/Ad
+  // Spend prefer a manual override for that month, falling back to the live
+  // Whop/Meta figure.
   const monthly = months.map(month => {
     const revenue = resolveMonthValue(month, revenueByMonth[month], whopWarning === null, revenueOverrides);
     const adSpend = resolveMonthValue(month, adSpendByMonth[month], metaWarning === null, adSpendOverrides);
     const recurringSubscriptions = sumResolvedItems(month, 'subscription');
-    const employeeCosts = sumResolvedItems(month, 'payroll');
-    return computeMonthPnL(month, revenue.amount, adSpend.amount, recurringSubscriptions, employeeCosts, revenue.source, adSpend.source);
+    const humanLabor = getHumanLaborForMonth(month);
+    const pnl = computeMonthPnL(month, revenue.amount, adSpend.amount, recurringSubscriptions, humanLabor.total, revenue.source, adSpend.source);
+    return { ...pnl, humanLaborItems: humanLabor.items };
   });
 
   const ytdRevenue = monthly.reduce((s, m) => s + m.revenue, 0);

@@ -63,17 +63,16 @@ function getMetaConfig(): MetaConfig {
 
 export interface DataWarning { source: 'whop' | 'meta'; message: string }
 
-// Statuses that should never count as revenue — money that was charged but
-// didn't actually stick. Blacklist (not whitelist) on purpose: if Whop's exact
-// "successful" status string is spelled differently than expected, a whitelist
-// would silently zero out real revenue, while this only risks under-filtering.
-const NON_REVENUE_STATUSES = new Set([
-  'refunded', 'failed', 'disputed', 'cancelled', 'canceled', 'void', 'voided',
-  'chargeback', 'chargeback_reversed', 'declined', 'pending', 'incomplete',
-]);
-
-// Fetches every Whop payment once and buckets by calendar month — reused across
-// however many months a caller needs instead of one API round-trip per month.
+// Previously excluded payments by guessing Whop's status strings for
+// refunded/failed/etc. — that guess is the most likely reason revenue read
+// LOW: any status that didn't exactly match Whop's real vocabulary just
+// wouldn't be excluded, but a status that accidentally over-matched would
+// silently drop real revenue with no way to see it happening. Trusting the
+// net amount Whop itself reports (skipping only non-positive ones, which
+// can't be revenue either way) removes the guesswork entirely. If a
+// specific status genuinely needs excluding later, /api/admin/income/whop-debug
+// shows the real status strings and per-status totals to confirm it with
+// data instead of another guess.
 export async function getWhopRevenueByMonth(): Promise<{ byMonth: Record<string, number>; warning: DataWarning | null }> {
   const { apiKey, companyId } = getWhopConfig();
   if (!apiKey || !companyId) {
@@ -83,7 +82,7 @@ export async function getWhopRevenueByMonth(): Promise<{ byMonth: Record<string,
     const payments = await listWhopPayments(apiKey, companyId);
     const byMonth: Record<string, number> = {};
     for (const p of payments) {
-      if (NON_REVENUE_STATUSES.has((p.status ?? '').toLowerCase())) continue;
+      if (p.amount <= 0) continue;
       const month = p.createdAt.slice(0, 7);
       byMonth[month] = (byMonth[month] ?? 0) + p.amount;
     }
