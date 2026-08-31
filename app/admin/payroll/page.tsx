@@ -491,9 +491,10 @@ export default function AdminPayrollPage() {
   const activeEmployees = employees.filter(e => e.active);
   const currentTotal = activeEmployees.reduce((s, e) => s + (e.currentPeriod?.totalAmount ?? 0), 0);
   const pendingCount = activeEmployees.filter(e => e.currentPeriod?.status === 'pending').length;
-  // Assignment picker sources both admins and other payroll employees, so
-  // either kind of person can own a card.
-  const assignableOptions = Array.from(new Set([...adminNames, ...employees.map(e => e.name)])).sort();
+  // Assignment picker sources admin accounts only (from /api/users) — an
+  // employee card is "assigned to" whichever admin owns/manages that
+  // relationship, not to another payroll employee.
+  const assignableOptions = Array.from(new Set(adminNames)).sort();
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
@@ -530,7 +531,7 @@ export default function AdminPayrollPage() {
         </div>
 
         <div className="space-y-2">
-          {employees.map(e => <EmployeeCard key={e.id} employee={e} assignableOptions={assignableOptions.filter(n => n !== e.name)} onChange={load} />)}
+          {employees.map(e => <EmployeeCard key={e.id} employee={e} assignableOptions={assignableOptions} onChange={load} />)}
         </div>
       </div>
 
