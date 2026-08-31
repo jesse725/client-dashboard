@@ -169,7 +169,7 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
           {tenure(daysSinceLaunch(c))}
         </span>
         {ghlStage && (
-          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(108,99,255,0.12)', color: 'var(--accent)' }}>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(13,155,110,0.12)', color: 'var(--accent)' }}>
             GHL ✓
           </span>
         )}
@@ -665,7 +665,7 @@ export default function TrackerPage() {
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full" style={{ background: stage.color }} />
                         <span className="font-semibold text-sm">{stage.label}</span>
-                        {stage.ghl && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(108,99,255,0.12)', color: 'var(--accent)' }}>GHL</span>}
+                        {stage.ghl && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(13,155,110,0.12)', color: 'var(--accent)' }}>GHL</span>}
                       </div>
                       <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: `${stage.color}22`, color: stage.color }}>{stageClients.length}</span>
                     </div>

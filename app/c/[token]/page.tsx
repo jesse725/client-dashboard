@@ -41,7 +41,7 @@ interface ShareData {
 
 const C = {
   bg: '#0f1117', surface: '#1a1d27', surface2: '#242736', border: '#2e3147',
-  accent: '#6c63ff', text: '#e8e9f0', muted: '#8b8fa8',
+  accent: '#0d9b6e', text: '#e8e9f0', muted: '#8b8fa8',
   green: '#22c55e', red: '#ef4444', yellow: '#f59e0b', blue: '#3b82f6',
 };
 const font = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif';
@@ -179,7 +179,9 @@ export default function ClientSharePage() {
       {/* Nav */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '14px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 9, background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: 'white', flexShrink: 0 }}>M</div>
+          <div style={{ width: 36, height: 36, borderRadius: 9, background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6, flexShrink: 0 }}>
+            <img src="/logo-icon.png" alt="Merova Media" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          </div>
           <div>
             <p style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.2 }}>{client.name}</p>
             <p style={{ fontSize: 11, color: C.muted }}>Results Dashboard · Merova Media</p>

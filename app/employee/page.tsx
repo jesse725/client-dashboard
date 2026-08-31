@@ -91,9 +91,14 @@ export default function EmployeePayrollPage() {
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
       <nav className="border-b px-4 py-4 flex items-center justify-between sticky top-0 z-10" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <div className="min-w-0">
-          <p className="font-semibold text-sm truncate">{employee.name}</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{employee.role}</p>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center p-1.5 shrink-0" style={{ background: 'var(--accent)' }}>
+            <img src="/logo-icon.png" alt="Merova Media" className="w-full h-full object-contain" />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{employee.name}</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{employee.role}</p>
+          </div>
         </div>
         <button onClick={() => signOut({ callbackUrl: '/login' })} className="btn-ghost text-xs flex items-center gap-1.5 shrink-0">
           <LogOut size={13} /> Sign Out

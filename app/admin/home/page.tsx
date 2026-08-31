@@ -67,7 +67,9 @@ export default function AdminHomePage() {
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--background)' }}>
       <nav className="border-b px-6 py-4 flex items-center justify-between" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm" style={{ background: 'var(--accent)' }}>M</div>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center p-1.5" style={{ background: 'var(--accent)' }}>
+            <img src="/logo-icon.png" alt="Merova Media" className="w-full h-full object-contain" />
+          </div>
           <span className="font-semibold">Merova Media</span>
         </div>
         <Link href="/admin" className="btn-ghost text-sm flex items-center gap-2">

@@ -41,11 +41,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--background)' }}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4" style={{ background: 'var(--accent)' }}>
-            <span className="text-white font-bold text-xl">M</span>
-          </div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Merova Media</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Client Dashboard</p>
+          <img src="/logo.png" alt="Merova Media" className="h-16 mx-auto mb-3" />
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Client Dashboard</p>
         </div>
 
         {/* Mode toggle */}

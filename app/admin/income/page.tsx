@@ -427,7 +427,7 @@ function MonthlyItemSection({ title, items, onSave, bare }: {
           <div className="min-w-0">
             <span className={bare ? undefined : 'font-medium truncate'} style={bare ? { color: 'var(--text-muted)' } : undefined}>{item.name}</span>
             {item.isOverride && (
-              <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ background: 'rgba(108,99,255,0.15)', color: 'var(--accent)' }}>edited this month</span>
+              <span className="text-xs ml-2 px-1.5 py-0.5 rounded" style={{ background: 'rgba(13,155,110,0.15)', color: 'var(--accent)' }}>edited this month</span>
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">

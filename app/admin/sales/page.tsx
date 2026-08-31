@@ -1028,7 +1028,7 @@ export default function SalesPage() {
           <span className="font-semibold flex items-center gap-2">
             <TrendingUp size={15} style={{ color: 'var(--accent)' }} /> Sales Tracker
           </span>
-          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(108,99,255,0.1)', color: 'var(--accent)' }}>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(13,155,110,0.1)', color: 'var(--accent)' }}>
             Merova AV Pipeline
           </span>
           {totalRevenue > 0 && (
