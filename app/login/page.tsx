@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<'client' | 'employee' | 'team'>('client');
+  const [mode, setMode] = useState<'client' | 'team'>('client');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -25,22 +25,15 @@ export default function LoginPage() {
     if (res?.error) {
       setError(
         mode === 'client' ? 'No account found for that email. Make sure you use the email from your onboarding form.'
-        : mode === 'employee' ? 'No account found for that email. Check with your admin if this seems wrong.'
-        : 'Invalid email or password.'
+        : 'No account found for that email, or the password is incorrect. Employees: leave the password blank.'
       );
       setLoading(false);
     } else {
-      // Fetch session to get clientId for client redirect
-      const { getSession } = await import('next-auth/react');
-      const session = await getSession();
-      const user = session?.user as any;
-      if (user?.role === 'client' && user?.clientId) {
-        router.push(`/dashboard/${user.clientId}`);
-      } else if (user?.role === 'employee') {
-        router.push('/employee');
-      } else {
-        router.push('/dashboard');
-      }
+      // Let the root page do the role-based redirect — it reads the session
+      // fresh server-side on every visit, so there's no client-side race
+      // where the session hasn't finished hydrating yet (that race is what
+      // used to intermittently send people to the wrong landing page).
+      router.push('/');
     }
   }
 
@@ -65,15 +58,6 @@ export default function LoginPage() {
               color: mode === 'client' ? '#fff' : 'var(--text-muted)',
             }}>
             I'm a Client
-          </button>
-          <button
-            onClick={() => { setMode('employee'); setError(''); }}
-            className="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
-            style={{
-              background: mode === 'employee' ? 'var(--accent)' : 'transparent',
-              color: mode === 'employee' ? '#fff' : 'var(--text-muted)',
-            }}>
-            I'm an Employee
           </button>
           <button
             onClick={() => { setMode('team'); setError(''); }}
@@ -106,25 +90,6 @@ export default function LoginPage() {
                 />
               </div>
             </>
-          ) : mode === 'employee' ? (
-            <>
-              <div className="text-center pb-1">
-                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Welcome back 👋</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Enter the email your admin has on file for you</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Your Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="input"
-                  placeholder="you@merova.com"
-                  required
-                  autoFocus
-                />
-              </div>
-            </>
           ) : (
             <>
               <div>
@@ -147,8 +112,10 @@ export default function LoginPage() {
                   onChange={e => setPassword(e.target.value)}
                   className="input"
                   placeholder="••••••••"
-                  required
                 />
+                <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Employees: leave this blank — just sign in with your email above.
+                </p>
               </div>
             </>
           )}
@@ -160,7 +127,7 @@ export default function LoginPage() {
           )}
 
           <button type="submit" className="btn-primary w-full" disabled={loading}>
-            {loading ? 'Signing in…' : mode === 'client' ? 'Access My Dashboard' : mode === 'employee' ? 'Access My Payroll' : 'Sign In'}
+            {loading ? 'Signing in…' : mode === 'client' ? 'Access My Dashboard' : 'Sign In'}
           </button>
         </form>
       </div>
