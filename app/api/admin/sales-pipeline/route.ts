@@ -1,42 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { fetchAllOpportunitiesRaw } from '@/lib/ghl';
 
-const GHL_API_KEY = 'pit-04a0e11c-af24-4ca8-a4cc-bc7745fae31b';
 const LOCATION_ID = 'NqZup9jK9NOBs8GDIyuX';
 const PIPELINE_ID = '11VwMme2JncYTm2Kq6ky';
-
-async function fetchAllOpps() {
-  const opps: any[] = [];
-  let startAfter: string | undefined;
-  let startAfterId: string | undefined;
-
-  while (true) {
-    const url = new URL('https://services.leadconnectorhq.com/opportunities/search');
-    url.searchParams.set('location_id', LOCATION_ID);
-    url.searchParams.set('pipeline_id', PIPELINE_ID);
-    url.searchParams.set('limit', '100');
-    if (startAfter) {
-      url.searchParams.set('startAfter', startAfter);
-      url.searchParams.set('startAfterId', startAfterId!);
-    }
-
-    const res = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${GHL_API_KEY}`,
-        Version: '2021-07-28',
-      },
-    });
-    if (!res.ok) break;
-    const data = await res.json();
-    opps.push(...(data.opportunities ?? []));
-    if (!data.meta?.nextPageUrl || data.opportunities?.length < 100) break;
-    startAfter = data.meta.startAfter;
-    startAfterId = data.meta.startAfterId;
-  }
-
-  return opps;
-}
 
 export async function GET() {
   const auth = await requireFinancialAccess();
@@ -45,9 +13,17 @@ export async function GET() {
   const db = getDb();
   const adSpendRow = db.prepare("SELECT value FROM settings WHERE key = 'sales_ad_spend'").get() as any;
   const adSpend = adSpendRow ? parseFloat(adSpendRow.value) : 0;
+  // Same agency key GHL Sync uses (Admin Settings) — was previously a hardcoded
+  // token duplicated in source here and in agency-pipeline/route.ts, which both
+  // leaked a live credential into the repo AND meant rotating the key in
+  // Settings silently stopped updating these two routes.
+  const agencyKey = (db.prepare("SELECT value FROM settings WHERE key = 'ghl_agency_key'").get() as any)?.value;
+  if (!agencyKey) {
+    return NextResponse.json({ error: 'GHL agency API key is not configured — set it in Admin Settings > GHL Sync.' }, { status: 400 });
+  }
 
   try {
-    const raw = await fetchAllOpps();
+    const raw = await fetchAllOpportunitiesRaw(agencyKey, LOCATION_ID, PIPELINE_ID);
     // GHL returns pipelineStageId, not stageId — normalize for the frontend
     const opportunities = raw.map((o: any) => ({
       id: o.id,

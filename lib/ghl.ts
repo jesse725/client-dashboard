@@ -107,6 +107,57 @@ export async function fetchCustomFields(
   return (data.customFields ?? []) as GHLCustomField[];
 }
 
+// ── Shared pagination: fetch every opportunity in a pipeline ────────────────
+// GHL's actual /opportunities/search response does not reliably include a
+// `meta.nextPageUrl` field (confirmed against GHL's own docs and a working
+// third-party integration — the response shape is `{ opportunities, meta,
+// aggregations }` with `meta.total` as the authoritative count, not a next-
+// page link). The old logic required `meta.nextPageUrl` to be truthy to
+// continue paginating, which meant it silently stopped after the FIRST page
+// for every pipeline — any pipeline with more than 100 opportunities ever
+// created had its lead/stage counts, CPL attribution, and "last lead" dates
+// all quietly truncated to whatever fit in that first page. This continues
+// instead until either the page comes back short (fewer than `limit` items —
+// there's nothing left) or, when GHL reports `meta.total`, until that many
+// have been collected — whichever signal fires first, so a wrong/missing
+// `total` can't cause under- OR over-fetching.
+async function fetchAllOpportunitiesRaw(
+  apiKey: string,
+  locationId: string,
+  pipelineId: string
+): Promise<any[]> {
+  const headers = v2Headers(apiKey);
+  const limit = 100;
+  const HARD_PAGE_CAP = 500; // 50,000 opportunities — a runaway-loop guard, not a real ceiling
+  let allOpps: any[] = [];
+  let startAfter: string | undefined;
+  let startAfterId: string | undefined;
+
+  for (let page = 0; page < HARD_PAGE_CAP; page++) {
+    let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&limit=${limit}`;
+    if (startAfter) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) break;
+    const data = await res.json();
+    const opps: any[] = data.opportunities ?? [];
+    allOpps = allOpps.concat(opps);
+
+    if (opps.length === 0) break;
+    const total = typeof data.meta?.total === 'number' ? data.meta.total : undefined;
+    const shortPage = opps.length < limit;
+    const reachedReportedTotal = total != null && allOpps.length >= total;
+    if (shortPage || reachedReportedTotal) break;
+
+    startAfter = data.meta?.startAfter;
+    startAfterId = data.meta?.startAfterId;
+    // A full page with no cursor to continue from can't be paginated safely
+    // — stop rather than risk re-fetching the same page forever.
+    if (!startAfter || !startAfterId) break;
+  }
+
+  return allOpps;
+}
+
 // ── Location-level: opportunity counts per stage ─────────────────────────────
 export async function fetchGHLPipelineStats(
   apiKey: string,
@@ -114,26 +165,7 @@ export async function fetchGHLPipelineStats(
   pipelineId: string,
   stageIds: { leads?: string; contacted?: string; unqualified?: string; phone?: string; inhome?: string }
 ): Promise<PipelineStats> {
-  const headers = v2Headers(apiKey);
-
-  // Paginate through all opportunities for this pipeline
-  let allOpps: GHLOpportunity[] = [];
-  const limit = 100;
-  let startAfter: string | undefined;
-  let startAfterId: string | undefined;
-
-  while (true) {
-    let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&limit=${limit}`;
-    if (startAfter) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) break;
-    const data = await res.json();
-    const opps: GHLOpportunity[] = data.opportunities ?? [];
-    allOpps = allOpps.concat(opps);
-    if (opps.length < limit || !data.meta?.nextPageUrl) break;
-    startAfter = data.meta.startAfter;
-    startAfterId = data.meta.startAfterId;
-  }
+  const allOpps: GHLOpportunity[] = await fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId);
 
   const count = (stageId?: string) =>
     stageId ? allOpps.filter((o) => o.pipelineStageId === stageId).length : 0;
@@ -165,27 +197,13 @@ export async function fetchGHLOpportunitiesRaw(
   locationId: string,
   pipelineId: string
 ): Promise<GHLOpportunityRaw[]> {
-  const headers = v2Headers(apiKey);
-  let allOpps: GHLOpportunityRaw[] = [];
-  const limit = 100;
-  let startAfter: string | undefined;
-  let startAfterId: string | undefined;
-
-  while (true) {
-    let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&limit=${limit}`;
-    if (startAfter) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) break;
-    const data = await res.json();
-    const opps: GHLOpportunityRaw[] = data.opportunities ?? [];
-    allOpps = allOpps.concat(opps);
-    if (opps.length < limit || !data.meta?.nextPageUrl) break;
-    startAfter = data.meta.startAfter;
-    startAfterId = data.meta.startAfterId;
-  }
-
-  return allOpps;
+  return fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId) as Promise<GHLOpportunityRaw[]>;
 }
+
+// Exported for callers that need the raw opportunities plus fields
+// fetchGHLOpportunitiesRaw's narrower type doesn't carry (e.g. `status`,
+// `updatedAt`, `assignedTo`) — same pagination guarantees as above.
+export { fetchAllOpportunitiesRaw };
 
 // ── Key resolver ─────────────────────────────────────────────────────────────
 // If client has their own key use it; otherwise fall back to agency key.

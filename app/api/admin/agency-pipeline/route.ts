@@ -2,18 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { fetchLocationPipelines } from '@/lib/ghl';
+import { fetchLocationPipelines, fetchAllOpportunitiesRaw } from '@/lib/ghl';
 
-const AGENCY_API_KEY = 'pit-04a0e11c-af24-4ca8-a4cc-bc7745fae31b';
 const GHL_V2 = 'https://services.leadconnectorhq.com';
-const GHL_VERSION = '2021-07-28';
 
 // Fetch all opportunities in a pipeline and return contact name → stage name map
-async function fetchPipelineOpportunities(locationId: string, pipelineId: string) {
-  const headers = {
-    Authorization: `Bearer ${AGENCY_API_KEY}`,
-    Version: GHL_VERSION,
-  };
+async function fetchPipelineOpportunities(apiKey: string, locationId: string, pipelineId: string) {
+  const headers = { Authorization: `Bearer ${apiKey}`, Version: '2021-07-28' };
 
   // Get pipeline stages first
   const pRes = await fetch(`${GHL_V2}/opportunities/pipelines?locationId=${locationId}`, { headers });
@@ -22,22 +17,7 @@ async function fetchPipelineOpportunities(locationId: string, pipelineId: string
   const stageMap: Record<string, string> = {};
   for (const s of pipeline?.stages ?? []) stageMap[s.id] = s.name;
 
-  // Paginate opportunities
-  let opps: any[] = [];
-  let startAfter: string | undefined;
-  let startAfterId: string | undefined;
-  while (true) {
-    let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&limit=100`;
-    if (startAfter) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
-    const res = await fetch(url, { headers });
-    if (!res.ok) break;
-    const data = await res.json();
-    const batch = data.opportunities ?? [];
-    opps = opps.concat(batch);
-    if (batch.length < 100 || !data.meta?.nextPageUrl) break;
-    startAfter = data.meta.startAfter;
-    startAfterId = data.meta.startAfterId;
-  }
+  const opps = await fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId);
 
   return opps.map((o: any) => ({
     id: o.id,
@@ -57,6 +37,12 @@ export async function GET(req: NextRequest) {
   const db = getDb();
   const locationId = (db.prepare("SELECT value FROM settings WHERE key = 'agency_ghl_location_id'").get() as any)?.value;
   const pipelineId = (db.prepare("SELECT value FROM settings WHERE key = 'agency_ghl_pipeline_id'").get() as any)?.value;
+  // Same agency key GHL Sync uses (Admin Settings) — was previously a hardcoded
+  // token duplicated in source here and in sales-pipeline/route.ts.
+  const agencyKey = (db.prepare("SELECT value FROM settings WHERE key = 'ghl_agency_key'").get() as any)?.value;
+  if (!agencyKey) {
+    return NextResponse.json({ configured: false, error: 'GHL agency API key is not configured — set it in Admin Settings > GHL Sync.' });
+  }
 
   // If no location configured, return pipelines discovery mode
   if (!locationId) {
@@ -66,7 +52,7 @@ export async function GET(req: NextRequest) {
   // If location set but no pipeline, return available pipelines
   if (!pipelineId) {
     try {
-      const pipelines = await fetchLocationPipelines(AGENCY_API_KEY, locationId);
+      const pipelines = await fetchLocationPipelines(agencyKey, locationId);
       return NextResponse.json({ configured: false, locationId, pipelines });
     } catch {
       return NextResponse.json({ configured: false, error: 'Could not fetch pipelines' });
@@ -74,7 +60,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const opps = await fetchPipelineOpportunities(locationId, pipelineId);
+    const opps = await fetchPipelineOpportunities(agencyKey, locationId, pipelineId);
     return NextResponse.json({ configured: true, opportunities: opps });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
