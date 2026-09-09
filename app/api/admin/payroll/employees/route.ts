@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { ensureCurrentPeriod, getPeriodWithTotal, getPeriodForDate } from '@/lib/payroll';
+import { syncClientManagementPay } from '@/lib/clientManagement';
 
 // Payroll is Jesse-only, same as the rest of this app's financial data —
 // other admins can't see coworkers' pay.
@@ -14,6 +15,8 @@ export async function GET() {
 
   const withCurrentPeriod = employees.map(e => {
     if (!e.active) return { ...e, currentPeriod: null };
+    // No-op for employees with no tracked clients — cheap to call for everyone.
+    syncClientManagementPay(e.id);
     const periodId = ensureCurrentPeriod(e.id);
     return { ...e, currentPeriod: getPeriodWithTotal(periodId) };
   });

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { getEmployeeById, getPeriodsForEmployee } from '@/lib/payroll';
+import { syncClientManagementPay, getClientManagementSummary } from '@/lib/clientManagement';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireFinancialAccess();
@@ -11,7 +12,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const employee = getEmployeeById(Number(id));
   if (!employee) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json({ employee, periods: getPeriodsForEmployee(Number(id)) });
+  syncClientManagementPay(Number(id));
+  return NextResponse.json({
+    employee,
+    periods: getPeriodsForEmployee(Number(id)),
+    clientTracking: getClientManagementSummary(Number(id)),
+  });
 }
 
 const ALLOWED_FIELDS: Record<string, string> = {
@@ -20,6 +26,8 @@ const ALLOWED_FIELDS: Record<string, string> = {
   revenueSharePct: 'revenue_share_pct', hourlyBonusRate: 'hourly_bonus_rate',
   hourlyBonusThresholdMinutes: 'hourly_bonus_threshold_minutes', notes: 'notes',
   paymentMethod: 'payment_method', agreementUrl: 'agreement_url', assignedTo: 'assigned_to',
+  clientOnboardLaunchBonus: 'client_onboard_launch_bonus',
+  clientManagementMonthlyFee: 'client_management_monthly_fee',
 };
 
 const VALID_PAYMENT_METHODS = ['bank_transfer', 'wise', 'paypal', 'check', 'other'];

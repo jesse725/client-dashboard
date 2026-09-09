@@ -342,6 +342,22 @@ function initSchema(db: Database.Database) {
       recorded_by TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Per-employee client roster for role-specific recurring/bonus pay tied
+    -- to real clients (e.g. a CSM's onboarding+launch bonus and ongoing
+    -- management fee). References the same clients table every other part
+    -- of the app uses, so there's one client roster to pick from, not a
+    -- second freeform copy of it.
+    CREATE TABLE IF NOT EXISTS employee_client_tracking (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      onboarded_at TEXT,
+      launched_at TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(employee_id, client_id)
+    );
   `);
 
   // Migrations for employees table — must run after the block above, since
@@ -353,6 +369,12 @@ function initSchema(db: Database.Database) {
   // name (an admin's or another staff member's), not a hard FK, since the
   // picker sources from two different tables (users + employees).
   if (!employeeCols.includes('assigned_to')) db.exec('ALTER TABLE employees ADD COLUMN assigned_to TEXT');
+  // Per-client bonus/fee rates for the client-tracking feature (see
+  // employee_client_tracking + lib/clientManagement.ts) — editable per
+  // employee like the other pay-structure fields, rather than hardcoded, so
+  // a second employee with a similar role can have different rates.
+  if (!employeeCols.includes('client_onboard_launch_bonus')) db.exec('ALTER TABLE employees ADD COLUMN client_onboard_launch_bonus REAL NOT NULL DEFAULT 100');
+  if (!employeeCols.includes('client_management_monthly_fee')) db.exec('ALTER TABLE employees ADD COLUMN client_management_monthly_fee REAL NOT NULL DEFAULT 150');
 
   seedPayrollData(db);
   seedIncomeData(db);

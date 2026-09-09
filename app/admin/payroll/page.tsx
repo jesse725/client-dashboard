@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Users, Plus, ChevronDown, ChevronRight, CheckCircle2, Clock,
-  Trash2, AlertTriangle, FileText, Landmark, UserCog, Timer,
+  Trash2, AlertTriangle, FileText, Landmark, UserCog, Timer, Rocket,
 } from 'lucide-react';
 import { PAYMENT_METHODS } from '@/lib/payroll-constants';
 
@@ -85,6 +85,8 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
       hourlyBonusThresholdMinutes: employee.hourly_bonus_threshold_minutes,
       paymentMethod: employee.payment_method ?? 'bank_transfer', agreementUrl: employee.agreement_url ?? '',
       assignedTo: employee.assigned_to ?? '',
+      clientOnboardLaunchBonus: employee.client_onboard_launch_bonus ?? 100,
+      clientManagementMonthlyFee: employee.client_management_monthly_fee ?? 150,
       notes: employee.notes ?? '',
     });
     setEditing(true);
@@ -204,6 +206,8 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
                     {assignableOptions.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 </Field>
+                <Field label="Onboard+Launch bonus ($)"><input type="number" className="input text-sm" value={form.clientOnboardLaunchBonus} onChange={e => setForm({ ...form, clientOnboardLaunchBonus: Number(e.target.value) })} /></Field>
+                <Field label="Client mgmt fee ($/mo)"><input type="number" className="input text-sm" value={form.clientManagementMonthlyFee} onChange={e => setForm({ ...form, clientManagementMonthlyFee: Number(e.target.value) })} /></Field>
               </div>
               <Field label="Employment Agreement URL"><input className="input text-sm w-full" placeholder="Link to signed agreement (Drive, Dropbox, etc.)" value={form.agreementUrl} onChange={e => setForm({ ...form, agreementUrl: e.target.value })} /></Field>
               <Field label="Notes"><textarea className="input text-sm w-full" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
@@ -224,6 +228,8 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
                   {employee.per_client_fee > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Per-client fee</span><span className="text-right font-medium">{fmt$(employee.per_client_fee)}</span></>)}
                   {employee.revenue_share_pct > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Revenue share</span><span className="text-right font-medium">{employee.revenue_share_pct}%</span></>)}
                   {employee.hourly_bonus_rate > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Hourly bonus</span><span className="text-right font-medium">{fmt$(employee.hourly_bonus_rate)}/hr past {employee.hourly_bonus_threshold_minutes}min</span></>)}
+                  {employee.client_onboard_launch_bonus > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Onboard+Launch bonus</span><span className="text-right font-medium">{fmt$(employee.client_onboard_launch_bonus)}/client</span></>)}
+                  {employee.client_management_monthly_fee > 0 && (<><span style={{ color: 'var(--text-muted)' }}>Client mgmt fee</span><span className="text-right font-medium">{fmt$(employee.client_management_monthly_fee)}/mo per client</span></>)}
                   <span style={{ color: 'var(--text-muted)' }} className="flex items-center gap-1"><Landmark size={12} /> Payment method</span>
                   <span className="text-right font-medium">{methodLabel(employee.payment_method)}</span>
                   <span style={{ color: 'var(--text-muted)' }} className="flex items-center gap-1"><UserCog size={12} /> Assigned to</span>
@@ -306,6 +312,12 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
                 </div>
               )}
 
+              <ClientManagementSection
+                employeeId={employee.id}
+                tracking={detail.clientTracking ?? []}
+                onChange={() => { loadDetail(); onChange(); }}
+              />
+
               {detail.periods.length > 1 && (
                 <div className="card-2 overflow-hidden">
                   <p className="text-xs font-semibold uppercase tracking-wide px-4 pt-3 pb-2" style={{ color: 'var(--text-muted)' }}>History</p>
@@ -340,6 +352,154 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
           onSaved={() => { setShowRecordPayment(false); loadDetail(); onChange(); }}
         />
       )}
+    </div>
+  );
+}
+
+// ── Client Management (CSM-style onboarding+launch bonus / ongoing fee) ─────
+// Which real clients this employee onboarded/launched/is managing, and what
+// that earns them — picked from the same client roster the rest of the app
+// uses, not a freeform list. The dollar totals shown here are read straight
+// back from the real bonus line items the server already generated (see
+// lib/clientManagement.ts) — this is a view onto real pay, not a separate
+// estimate that could drift from what's actually in the current/past periods.
+function ClientManagementSection({ employeeId, tracking, onChange }: {
+  employeeId: number; tracking: any[]; onChange: () => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [clients, setClients] = useState<any[]>([]);
+  const [loadingClients, setLoadingClients] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const openAdd = () => {
+    setShowAdd(true);
+    if (clients.length === 0) {
+      setLoadingClients(true);
+      fetch('/api/clients').then(r => r.json()).then(d => { setClients(Array.isArray(d) ? d : []); setLoadingClients(false); });
+    }
+  };
+
+  const trackedClientIds = new Set(tracking.map(t => t.clientId));
+  const availableClients = clients.filter(c => !trackedClientIds.has(c.id));
+
+  const addClient = async () => {
+    if (!selectedClientId) return;
+    setSaving(true);
+    await fetch(`/api/admin/payroll/employees/${employeeId}/client-tracking`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: Number(selectedClientId) }),
+    });
+    setSelectedClientId('');
+    setShowAdd(false);
+    setSaving(false);
+    onChange();
+  };
+
+  const updateTracking = async (trackingId: number, updates: any) => {
+    await fetch(`/api/admin/payroll/employees/${employeeId}/client-tracking?trackingId=${trackingId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates),
+    });
+    onChange();
+  };
+
+  const removeTracking = async (trackingId: number) => {
+    await fetch(`/api/admin/payroll/employees/${employeeId}/client-tracking?trackingId=${trackingId}`, { method: 'DELETE' });
+    onChange();
+  };
+
+  const total = tracking.reduce((s, t) => s + t.totalEarned, 0);
+
+  return (
+    <div className="card-2 overflow-hidden">
+      <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+        <p className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+          <Rocket size={12} /> Client Management
+        </p>
+        <button onClick={openAdd} className="btn-ghost text-xs flex items-center gap-1"><Plus size={12} /> Add Client</button>
+      </div>
+
+      {showAdd && (
+        <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+          {loadingClients ? (
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading clients…</p>
+          ) : (
+            <>
+              <select className="input text-sm flex-1 min-w-0" value={selectedClientId} onChange={e => setSelectedClientId(e.target.value)}>
+                <option value="">Select client…</option>
+                {availableClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button onClick={addClient} disabled={saving || !selectedClientId} className="btn-primary text-xs px-3 shrink-0">Add</button>
+              <button onClick={() => setShowAdd(false)} className="btn-ghost text-xs px-2 shrink-0">Cancel</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {tracking.length === 0 ? (
+        <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>No clients tracked yet — add one to start logging onboarding/launch dates.</p>
+      ) : (
+        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+          {tracking.map(t => (
+            <ClientTrackingRow
+              key={t.id} tracking={t}
+              onUpdate={updates => updateTracking(t.id, updates)}
+              onRemove={() => removeTracking(t.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {tracking.length > 0 && (
+        <div className="px-4 py-2.5 flex items-center justify-between text-sm font-bold" style={{ borderTop: '1px solid var(--border)' }}>
+          <span>Total — Client Management</span>
+          <span>{fmt$(total)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientTrackingRow({ tracking, onUpdate, onRemove }: {
+  tracking: any; onUpdate: (updates: any) => void; onRemove: () => void;
+}) {
+  return (
+    <div className="px-4 py-3 text-sm">
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <span className="font-medium truncate">{tracking.clientName}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="font-semibold" style={{ color: 'var(--green)' }}>{fmt$(tracking.totalEarned)}</span>
+          <button onClick={onRemove} className="opacity-50 hover:opacity-100"><Trash2 size={12} /></button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div>
+          <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Onboarded</label>
+          <input
+            type="date" className="input text-xs" defaultValue={tracking.onboardedAt ?? ''}
+            key={tracking.onboardedAt ?? 'empty-onboarded'}
+            onBlur={e => { if (e.target.value !== (tracking.onboardedAt ?? '')) onUpdate({ onboardedAt: e.target.value || null }); }}
+          />
+        </div>
+        <div>
+          <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Launched</label>
+          <input
+            type="date" className="input text-xs" defaultValue={tracking.launchedAt ?? ''}
+            key={tracking.launchedAt ?? 'empty-launched'}
+            onBlur={e => { if (e.target.value !== (tracking.launchedAt ?? '')) onUpdate({ launchedAt: e.target.value || null }); }}
+          />
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-xs gap-2" style={{ color: 'var(--text-muted)' }}>
+        <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+          <input type="checkbox" checked={tracking.active} onChange={e => onUpdate({ active: e.target.checked })} />
+          Actively managing
+        </label>
+        <span className="text-right">
+          {tracking.onboardLaunchBonusEarned ? '✓ Onboard+Launch bonus earned' : 'Bonus pending — needs both dates'}
+          {tracking.managementMonthsCharged > 0 && ` · ${tracking.managementMonthsCharged} mo. charged`}
+        </span>
+      </div>
     </div>
   );
 }

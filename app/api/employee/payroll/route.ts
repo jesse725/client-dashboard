@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireEmployeeAccess } from '@/lib/auth';
 import { getEmployeeById, ensureCurrentPeriod, getPeriodsForEmployee } from '@/lib/payroll';
+import { syncClientManagementPay } from '@/lib/clientManagement';
 
 // The employeeId comes ONLY from the verified session (requireEmployeeAccess)
 // — never from a query param or body — so there is no id an employee could
@@ -12,6 +13,7 @@ export async function GET() {
   const employee = getEmployeeById(auth.employeeId);
   if (!employee) return NextResponse.json({ error: 'Employee record not found' }, { status: 404 });
 
+  syncClientManagementPay(auth.employeeId);
   ensureCurrentPeriod(auth.employeeId);
   const periods = getPeriodsForEmployee(auth.employeeId);
 
