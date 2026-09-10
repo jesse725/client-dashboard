@@ -472,34 +472,29 @@ function ClientTrackingRow({ tracking, onUpdate, onRemove }: {
           <button onClick={onRemove} className="opacity-50 hover:opacity-100"><Trash2 size={12} /></button>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 mb-2">
-        <div>
-          <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Onboarded</label>
-          <input
-            type="date" className="input text-xs" defaultValue={tracking.onboardedAt ?? ''}
-            key={tracking.onboardedAt ?? 'empty-onboarded'}
-            onBlur={e => { if (e.target.value !== (tracking.onboardedAt ?? '')) onUpdate({ onboardedAt: e.target.value || null }); }}
-          />
-        </div>
-        <div>
-          <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Launched</label>
+      <div className="flex items-end gap-3 mb-2">
+        <div className="shrink-0">
+          <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Launch date</label>
           <input
             type="date" className="input text-xs" defaultValue={tracking.launchedAt ?? ''}
             key={tracking.launchedAt ?? 'empty-launched'}
             onBlur={e => { if (e.target.value !== (tracking.launchedAt ?? '')) onUpdate({ launchedAt: e.target.value || null }); }}
           />
         </div>
-      </div>
-      <div className="flex items-center justify-between text-xs gap-2" style={{ color: 'var(--text-muted)' }}>
-        <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+        <label className="flex items-center gap-1.5 cursor-pointer text-xs pb-2" style={{ color: 'var(--text-muted)' }}>
           <input type="checkbox" checked={tracking.active} onChange={e => onUpdate({ active: e.target.checked })} />
           Actively managing
         </label>
-        <span className="text-right">
-          {tracking.onboardLaunchBonusEarned ? '✓ Onboard+Launch bonus earned' : 'Bonus pending — needs both dates'}
-          {tracking.managementMonthsCharged > 0 && ` · ${tracking.managementMonthsCharged} mo. charged`}
-        </span>
       </div>
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        {tracking.launchedAt
+          ? tracking.onboardLaunchBonusEarned
+            ? `✓ Onboard + launch bonus paid${tracking.managementPaymentsCharged > 0 ? ` · ${tracking.managementPaymentsCharged} monthly fee${tracking.managementPaymentsCharged > 1 ? 's' : ''} so far` : ''}`
+            : 'Bonus queued for the next paycheck'
+          : 'Set the launch date to start the $100 bonus + monthly fee'}
+        {tracking.launchedAt && tracking.active && tracking.nextPaymentDate &&
+          ` · next fee ${fmtDate(tracking.nextPaymentDate)}`}
+      </p>
     </div>
   );
 }

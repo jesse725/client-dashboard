@@ -67,8 +67,8 @@ export interface Employee {
   payment_method: PaymentMethod;
   agreement_url: string | null; // link to the signed employment agreement (Drive/Dropbox/etc.)
   assigned_to: string | null; // display name of the admin/staff member who owns this employee's payroll card
-  client_onboard_launch_bonus: number; // one-time bonus once a tracked client has both an onboarded_at and launched_at
-  client_management_monthly_fee: number; // recurring fee per active tracked client, every 30 days starting at launched_at
+  client_onboard_launch_bonus: number; // one-time bonus once a tracked client has a launch date logged (onboarding + launch calls done)
+  client_management_monthly_fee: number; // recurring monthly fee per active tracked client, starting the first paycheck 30+ days after launch
   notes: string | null;
   created_at: string;
 }
@@ -80,9 +80,8 @@ export interface EmployeeClientTracking {
   id: number;
   employee_id: number;
   client_id: number;
-  onboarded_at: string | null; // YYYY-MM-DD
-  launched_at: string | null; // YYYY-MM-DD
-  active: number; // 0/1 — still being managed; gates further monthly-fee accrual, not past bonuses already paid
+  launched_at: string | null; // YYYY-MM-DD — the one date to log; onboarding + launch calls are done as of this date
+  active: number; // 0/1 — still being managed; gates further monthly-fee accrual, not past fees already paid
   created_at: string;
 }
 

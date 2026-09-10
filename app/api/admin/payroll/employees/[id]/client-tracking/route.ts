@@ -47,11 +47,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = await req.json();
   // Build the update object with only the keys the caller actually sent —
   // `{ active: undefined }` still has `'active' in obj === true` in JS, so
-  // spreading in an unconditional `active: cond ? x : undefined` here would
-  // silently reset active to false on every date-only edit. Omit the key
-  // entirely instead of passing it as undefined.
-  const updates: { onboardedAt?: string | null; launchedAt?: string | null; active?: boolean } = {};
-  if ('onboardedAt' in body) updates.onboardedAt = body.onboardedAt;
+  // passing an unconditional `active: cond ? x : undefined` here would
+  // silently reset active to false on every launch-date-only edit. Omit the
+  // key entirely instead of passing it as undefined.
+  const updates: { launchedAt?: string | null; active?: boolean } = {};
   if ('launchedAt' in body) updates.launchedAt = body.launchedAt;
   if ('active' in body) updates.active = !!body.active;
   updateClientTracking(Number(trackingId), updates);

@@ -352,7 +352,6 @@ function initSchema(db: Database.Database) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
       client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-      onboarded_at TEXT,
       launched_at TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),

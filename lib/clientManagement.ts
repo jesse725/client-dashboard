@@ -1,8 +1,9 @@
 import { getDb } from './db';
-import { getPeriodForDate, ensurePeriod, getEmployeeById } from './payroll';
+import { getPeriodForDate, ensurePeriod, getEmployeeById, type PeriodBounds } from './payroll';
 import type { EmployeeClientTracking } from '@/types';
 
-const MANAGEMENT_FEE_INTERVAL_DAYS = 30;
+const MANAGEMENT_FEE_START_DAYS = 30;
+const SCHEDULE_SAFETY_CAP = 600; // 50 years of monthly fees — guards against a malformed launch date
 
 export interface ClientTrackingWithClient extends EmployeeClientTracking {
   clientName: string;
@@ -29,12 +30,11 @@ export function addClientTracking(employeeId: number, clientId: number): number 
 
 export function updateClientTracking(
   id: number,
-  updates: { onboardedAt?: string | null; launchedAt?: string | null; active?: boolean }
+  updates: { launchedAt?: string | null; active?: boolean }
 ) {
   const db = getDb();
   const sets: string[] = [];
   const values: any[] = [];
-  if ('onboardedAt' in updates) { sets.push('onboarded_at = ?'); values.push(updates.onboardedAt || null); }
   if ('launchedAt' in updates) { sets.push('launched_at = ?'); values.push(updates.launchedAt || null); }
   if ('active' in updates) { sets.push('active = ?'); values.push(updates.active ? 1 : 0); }
   if (sets.length === 0) return;
@@ -47,35 +47,90 @@ export function removeClientTracking(id: number) {
   db.prepare('DELETE FROM employee_client_tracking WHERE id = ?').run(id);
 }
 
+// ── date helpers ────────────────────────────────────────────────────────────
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return ymd(d);
+}
+function todayStr(): string {
+  return ymd(new Date());
 }
 
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// The pay period whose payout date is the first one on or after `dateStr` —
+// i.e. "the next paycheck" for something that comes due on that date.
+function nextPayoutPeriodOnOrAfter(dateStr: string): PeriodBounds {
+  let probe = new Date(dateStr + 'T00:00:00');
+  for (let i = 0; i < 4; i++) {
+    const bounds = getPeriodForDate(probe);
+    if (bounds.payoutDate >= dateStr) return bounds;
+    // This period's payday already passed relative to the due date; step into
+    // the next half-month and check again.
+    probe = new Date(bounds.periodEnd + 'T00:00:00');
+    probe.setDate(probe.getDate() + 1);
+  }
+  return getPeriodForDate(new Date(dateStr + 'T00:00:00'));
+}
+
+// Same half of the month (1st–14th vs 15th–EOM), one calendar month on.
+// Stepping by whole months keeps the fee on a fixed nominal payout day, so
+// with two payouts a month it recurs on every other paycheck.
+function periodOneMonthLater(bounds: PeriodBounds): PeriodBounds {
+  const [y, m] = bounds.periodStart.split('-').map(Number); // m is 1-indexed
+  // new Date's month arg is 0-indexed, so passing the 1-indexed m lands in
+  // the next month; the day just needs to fall in the right half.
+  const probe = new Date(y, m, bounds.nominalDay === 14 ? 7 : 21);
+  return getPeriodForDate(probe);
+}
+
+function payoutMonthLabel(payoutDate: string): string {
+  const [y, m] = payoutDate.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
 function onboardLaunchBonusDescription(clientName: string): string {
   return `Onboarding + Launch Bonus — ${clientName}`;
 }
-
-function managementFeeDescription(clientName: string, monthIndex: number): string {
-  return `Client Management Fee — ${clientName} (Month ${monthIndex})`;
+function managementFeeDescription(clientName: string, monthLabel: string): string {
+  return `Client Management Fee — ${clientName} (${monthLabel})`;
+}
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, m => '\\' + m);
 }
 
-// Auto-generates the real pay_period_bonuses rows a tracked client roster
-// has actually earned so far: a one-time bonus once a client has both an
-// onboarded_at and launched_at logged, then a recurring fee every 30 days
-// after launch for as long as that client is still marked active (being
-// managed). Idempotent — matches on the bonus's own description text before
-// adding one, so calling this repeatedly (it runs lazily on every payroll
-// view, same as ensureCurrentPeriod elsewhere in this file) never double-
-// charges. These are fully real pay_period_bonuses rows once added — visible,
-// editable, and deletable in the normal bonus UI like any other bonus, never
-// a hidden number that only exists inside this calculation.
+// Every monthly-fee period that has already begun as of `asOf` — the first is
+// the pay period whose payday is the first on or after launch + 30 days, then
+// the same nominal day each month after. Keyed on periodStart (not payday) so
+// a fee for the current period shows up as soon as that period opens, i.e.
+// while this paycheck is still being prepared, not only once payday lands.
+function managementFeeSchedule(launchedAt: string, asOf: string): PeriodBounds[] {
+  const out: PeriodBounds[] = [];
+  let bounds = nextPayoutPeriodOnOrAfter(addDays(launchedAt, MANAGEMENT_FEE_START_DAYS));
+  for (let i = 0; i < SCHEDULE_SAFETY_CAP && bounds.periodStart <= asOf; i++) {
+    out.push(bounds);
+    bounds = periodOneMonthLater(bounds);
+  }
+  return out;
+}
+
+// Auto-generates the real pay_period_bonuses rows a tracked client roster has
+// actually earned as of today:
+//   • a one-time bonus, the first paycheck on or after a client's launch date
+//     (logging that one date means the onboarding + launch calls are done);
+//   • a recurring monthly fee — first one on the first paycheck on or after
+//     (launch + 30 days), then the same nominal day every month after, which
+//     with semi-monthly payouts is every other paycheck — for as long as the
+//     client stays marked active.
+// A fee whose natural payout already passed (or whose period is already paid)
+// is swept onto the current period as a catch-up line instead of reopening a
+// closed paycheck; its description still names the month it's for.
+// Idempotent: matches on the bonus's own description text before adding, so
+// running this on every payroll view (like ensureCurrentPeriod) never double-
+// charges. Every row it writes is a normal pay_period_bonuses row — visible,
+// editable and deletable in the usual bonus UI, tagged added_by 'system'.
 export function syncClientManagementPay(employeeId: number) {
   const employee = getEmployeeById(employeeId);
   if (!employee) return;
@@ -86,18 +141,27 @@ export function syncClientManagementPay(employeeId: number) {
   const today = todayStr();
   const onboardLaunchBonus = employee.client_onboard_launch_bonus ?? 100;
   const managementFee = employee.client_management_monthly_fee ?? 150;
+  const currentPeriod = getPeriodForDate(new Date(today + 'T00:00:00'));
 
-  const bonusExists = (description: string): boolean => {
-    const row = db.prepare(`
+  const bonusExists = (description: string): boolean =>
+    !!db.prepare(`
       SELECT 1 FROM pay_period_bonuses pb
       JOIN pay_periods p ON p.id = pb.pay_period_id
       WHERE p.employee_id = ? AND pb.description = ?
     `).get(employeeId, description);
-    return !!row;
-  };
 
-  const addBonus = (dateStr: string, description: string, amount: number) => {
-    const bounds = getPeriodForDate(new Date(dateStr + 'T00:00:00'));
+  const addBonus = (naturalBounds: PeriodBounds, description: string, amount: number) => {
+    // Don't attach a charge to a paycheck that's already gone out — sweep it
+    // onto the current period instead.
+    let bounds = naturalBounds;
+    if (bounds.payoutDate < today) {
+      bounds = currentPeriod;
+    } else {
+      const existing = db.prepare(
+        'SELECT status FROM pay_periods WHERE employee_id = ? AND payout_date = ?'
+      ).get(employeeId, bounds.payoutDate) as any;
+      if (existing?.status === 'paid') bounds = currentPeriod;
+    }
     const periodId = ensurePeriod(employeeId, bounds);
     db.prepare(
       "INSERT INTO pay_period_bonuses (pay_period_id, description, amount, added_by) VALUES (?, ?, ?, 'system')"
@@ -105,20 +169,19 @@ export function syncClientManagementPay(employeeId: number) {
   };
 
   for (const row of rows) {
-    if (row.onboarded_at && row.launched_at && onboardLaunchBonus > 0) {
+    if (!row.launched_at) continue;
+
+    if (onboardLaunchBonus > 0) {
       const description = onboardLaunchBonusDescription(row.clientName);
       if (!bonusExists(description)) {
-        const laterDate = row.onboarded_at > row.launched_at ? row.onboarded_at : row.launched_at;
-        addBonus(laterDate, description, onboardLaunchBonus);
+        addBonus(nextPayoutPeriodOnOrAfter(row.launched_at), description, onboardLaunchBonus);
       }
     }
 
-    if (row.launched_at && row.active && managementFee > 0) {
-      for (let n = 1; ; n++) {
-        const dueDate = addDays(row.launched_at, MANAGEMENT_FEE_INTERVAL_DAYS * n);
-        if (dueDate > today) break;
-        const description = managementFeeDescription(row.clientName, n);
-        if (!bonusExists(description)) addBonus(dueDate, description, managementFee);
+    if (row.active && managementFee > 0) {
+      for (const bounds of managementFeeSchedule(row.launched_at, today)) {
+        const description = managementFeeDescription(row.clientName, payoutMonthLabel(bounds.payoutDate));
+        if (!bonusExists(description)) addBonus(bounds, description, managementFee);
       }
     }
   }
@@ -128,24 +191,24 @@ export interface ClientManagementSummaryRow {
   id: number;
   clientId: number;
   clientName: string;
-  onboardedAt: string | null;
   launchedAt: string | null;
   active: boolean;
   onboardLaunchBonusEarned: boolean;
-  managementMonthsCharged: number;
+  managementPaymentsCharged: number;
+  nextPaymentDate: string | null; // next monthly-fee payout not yet reached, for display
   totalEarned: number;
 }
 
 // Read-only summary for the tracker UI — grouped by client, unlike the flat
-// chronological bonus list. Deliberately reads back the REAL amounts already
-// charged (via description match against pay_period_bonuses) rather than
-// re-deriving "months elapsed" independently, so this can never show a
-// number that doesn't match what syncClientManagementPay actually did —
-// e.g. a client marked inactive partway through correctly stops accruing
-// new months here too, because no new rows were ever added for it.
+// chronological bonus list. Reads back the REAL amounts already charged (by
+// description match against pay_period_bonuses) rather than re-deriving them,
+// so it can never disagree with what syncClientManagementPay actually did —
+// e.g. a client marked inactive partway through correctly stops adding up
+// here too, because no further rows were ever written for it.
 export function getClientManagementSummary(employeeId: number): ClientManagementSummaryRow[] {
   const db = getDb();
   const rows = getTrackingForEmployee(employeeId);
+  const today = todayStr();
 
   return rows.map(row => {
     const bonusRow = db.prepare(`
@@ -157,21 +220,33 @@ export function getClientManagementSummary(employeeId: number): ClientManagement
     const managementRow = db.prepare(`
       SELECT COUNT(*) AS cnt, COALESCE(SUM(pb.amount), 0) AS total FROM pay_period_bonuses pb
       JOIN pay_periods p ON p.id = pb.pay_period_id
-      WHERE p.employee_id = ? AND pb.description LIKE ?
-    `).get(employeeId, `Client Management Fee — ${row.clientName} (Month %`) as any;
+      WHERE p.employee_id = ? AND pb.description LIKE ? ESCAPE '\\'
+    `).get(employeeId, `Client Management Fee — ${escapeLike(row.clientName)} (%`) as any;
 
     const bonusTotal = bonusRow?.total ?? 0;
     const managementTotal = managementRow?.total ?? 0;
+
+    // The payday of the first monthly-fee period that hasn't opened yet — the
+    // "next fee is coming on …" hint. (A fee for a period that HAS opened is
+    // already a real line item, counted above.)
+    let nextPaymentDate: string | null = null;
+    if (row.launched_at && row.active) {
+      let bounds = nextPayoutPeriodOnOrAfter(addDays(row.launched_at, MANAGEMENT_FEE_START_DAYS));
+      for (let i = 0; i < SCHEDULE_SAFETY_CAP; i++) {
+        if (bounds.periodStart > today) { nextPaymentDate = bounds.payoutDate; break; }
+        bounds = periodOneMonthLater(bounds);
+      }
+    }
 
     return {
       id: row.id,
       clientId: row.client_id,
       clientName: row.clientName,
-      onboardedAt: row.onboarded_at,
       launchedAt: row.launched_at,
       active: !!row.active,
       onboardLaunchBonusEarned: bonusTotal > 0,
-      managementMonthsCharged: managementRow?.cnt ?? 0,
+      managementPaymentsCharged: managementRow?.cnt ?? 0,
+      nextPaymentDate,
       totalEarned: bonusTotal + managementTotal,
     };
   });
