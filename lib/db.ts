@@ -372,12 +372,28 @@ function initSchema(db: Database.Database) {
   // employee_client_tracking + lib/clientManagement.ts) — editable per
   // employee like the other pay-structure fields, rather than hardcoded, so
   // a second employee with a similar role can have different rates.
-  if (!employeeCols.includes('client_onboard_launch_bonus')) db.exec('ALTER TABLE employees ADD COLUMN client_onboard_launch_bonus REAL NOT NULL DEFAULT 100');
-  if (!employeeCols.includes('client_management_monthly_fee')) db.exec('ALTER TABLE employees ADD COLUMN client_management_monthly_fee REAL NOT NULL DEFAULT 150');
+  // Default 0, not Mo's actual rate — these two fields only apply to a CSM-
+  // style role; defaulting them to Mo's own numbers would hand every OTHER
+  // employee an onboarding+launch bonus and management fee they don't have.
+  // seedPayrollData sets Mo's row explicitly; the correction below fixes any
+  // database that already ran this migration with the old (wrong) default.
+  if (!employeeCols.includes('client_onboard_launch_bonus')) db.exec('ALTER TABLE employees ADD COLUMN client_onboard_launch_bonus REAL NOT NULL DEFAULT 0');
+  if (!employeeCols.includes('client_management_monthly_fee')) db.exec('ALTER TABLE employees ADD COLUMN client_management_monthly_fee REAL NOT NULL DEFAULT 0');
   // Free-text "what this person actually does" — the Internals Hub's own
   // field, distinct from `role` (a short title) and `notes` (payroll-specific
   // caveats like unverified seed figures).
   if (!employeeCols.includes('responsibilities')) db.exec('ALTER TABLE employees ADD COLUMN responsibilities TEXT');
+
+  // One-time correction: an earlier migration defaulted the two columns
+  // above to Mo's own 100/150 for every existing row, not just his. Zero it
+  // back out for anyone who (a) isn't the CSM and (b) still has that exact
+  // untouched combination — safe because no UI ever exposed a way to
+  // deliberately set a non-CSM employee to that same pair of numbers before
+  // now, so this can only be the stale default, never a real edit.
+  db.exec(`
+    UPDATE employees SET client_onboard_launch_bonus = 0, client_management_monthly_fee = 0
+    WHERE role != 'CSM' AND client_onboard_launch_bonus = 100 AND client_management_monthly_fee = 150
+  `);
 
   seedPayrollData(db);
   seedIncomeData(db);
@@ -424,10 +440,11 @@ function seedPayrollData(db: Database.Database) {
   if (count > 0) return;
 
   const UNVERIFIED = '⚠️ Seed figure from a planning conversation — confirm against the signed contract before relying on this for real payroll.';
-  const roster: { name: string; role: string; email: string; base: number; perClientFee?: number; revSharePct?: number; notes?: string }[] = [
+  const roster: { name: string; role: string; email: string; base: number; perClientFee?: number; revSharePct?: number; onboardLaunchBonus?: number; managementFee?: number; notes?: string }[] = [
     { name: 'Vojtech', role: 'Media Buyer', email: 'vojtech@example.invalid', base: 400 },
     {
       name: 'Mo', role: 'CSM', email: 'mo@example.invalid', base: 75, revSharePct: 5,
+      onboardLaunchBonus: 100, managementFee: 150,
       notes: '5% revenue share applies after a 3-month client renewal; also gets a ~$90 one-time renewal bonus. Neither is a fixed per-period amount — log both as bonus items in the period actually earned.',
     },
     { name: 'Bolu', role: 'Onboarding VA / A2P', email: 'bolu@example.invalid', base: 150, perClientFee: 50 },
@@ -437,12 +454,14 @@ function seedPayrollData(db: Database.Database) {
   ];
 
   const insert = db.prepare(`
-    INSERT INTO employees (name, role, email, base_amount_per_period, per_client_fee, revenue_share_pct, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO employees (
+      name, role, email, base_amount_per_period, per_client_fee, revenue_share_pct,
+      client_onboard_launch_bonus, client_management_monthly_fee, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const e of roster) {
     const notes = [UNVERIFIED, e.notes].filter(Boolean).join(' ');
-    insert.run(e.name, e.role, e.email, e.base, e.perClientFee ?? 0, e.revSharePct ?? 0, notes);
+    insert.run(e.name, e.role, e.email, e.base, e.perClientFee ?? 0, e.revSharePct ?? 0, e.onboardLaunchBonus ?? 0, e.managementFee ?? 0, notes);
   }
 }
 

@@ -97,6 +97,9 @@ function onboardLaunchBonusDescription(clientName: string): string {
 function managementFeeDescription(clientName: string, monthLabel: string): string {
   return `Client Management Fee — ${clientName} (${monthLabel})`;
 }
+function accountFeeDescription(clientName: string): string {
+  return `Account Fee — ${clientName}`;
+}
 function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, m => '\\' + m);
 }
@@ -117,16 +120,26 @@ function managementFeeSchedule(launchedAt: string, asOf: string): PeriodBounds[]
 }
 
 // Auto-generates the real pay_period_bonuses rows a tracked client roster has
-// actually earned as of today:
-//   • a one-time bonus, the first paycheck on or after a client's launch date
-//     (logging that one date means the onboarding + launch calls are done);
-//   • a recurring monthly fee — first one on the first paycheck on or after
-//     (launch + 30 days), then the same nominal day every month after, which
-//     with semi-monthly payouts is every other paycheck — for as long as the
-//     client stays marked active.
+// actually earned as of today. Two independent modes, decided per-employee by
+// which rate fields are actually set on their record (never by name) — the
+// employee's actual pay structure is the single source of truth for which
+// mode applies, not a hardcoded name check:
+//
+//   • CSM mode (client_onboard_launch_bonus and/or client_management_monthly_
+//     fee > 0, e.g. Mo): a one-time bonus on the first paycheck on or after a
+//     client's launch date (logging that one date means the onboarding +
+//     launch calls are done), then a recurring monthly fee — first one on the
+//     first paycheck on or after (launch + 30 days), then the same nominal
+//     day every month after, which with semi-monthly payouts is every other
+//     paycheck — for as long as the client stays marked active.
+//   • Flat per-account mode (per_client_fee > 0 and not CSM mode, e.g. Bolu):
+//     just a one-time fee per tracked account, no dates to enter — it fires
+//     as soon as the account is added, landing on the next paycheck after
+//     that.
+//
 // A fee whose natural payout already passed (or whose period is already paid)
 // is swept onto the current period as a catch-up line instead of reopening a
-// closed paycheck; its description still names the month it's for.
+// closed paycheck; its description still names what it's for.
 // Idempotent: matches on the bonus's own description text before adding, so
 // running this on every payroll view (like ensureCurrentPeriod) never double-
 // charges. Every row it writes is a normal pay_period_bonuses row — visible,
@@ -139,8 +152,10 @@ export function syncClientManagementPay(employeeId: number) {
 
   const db = getDb();
   const today = todayStr();
-  const onboardLaunchBonus = employee.client_onboard_launch_bonus ?? 100;
-  const managementFee = employee.client_management_monthly_fee ?? 150;
+  const onboardLaunchBonus = employee.client_onboard_launch_bonus ?? 0;
+  const managementFee = employee.client_management_monthly_fee ?? 0;
+  const perAccountFee = employee.per_client_fee ?? 0;
+  const isCsmMode = onboardLaunchBonus > 0 || managementFee > 0;
   const currentPeriod = getPeriodForDate(new Date(today + 'T00:00:00'));
 
   const bonusExists = (description: string): boolean =>
@@ -169,6 +184,18 @@ export function syncClientManagementPay(employeeId: number) {
   };
 
   for (const row of rows) {
+    if (!isCsmMode) {
+      // Flat per-account mode — no date field in the UI, so the tracking
+      // row's own created_at is the trigger: adding the account IS the event.
+      if (perAccountFee > 0) {
+        const description = accountFeeDescription(row.clientName);
+        if (!bonusExists(description)) {
+          addBonus(nextPayoutPeriodOnOrAfter(row.created_at.slice(0, 10)), description, perAccountFee);
+        }
+      }
+      continue;
+    }
+
     if (!row.launched_at) continue;
 
     if (onboardLaunchBonus > 0) {
@@ -204,13 +231,32 @@ export interface ClientManagementSummaryRow {
 // description match against pay_period_bonuses) rather than re-deriving them,
 // so it can never disagree with what syncClientManagementPay actually did —
 // e.g. a client marked inactive partway through correctly stops adding up
-// here too, because no further rows were ever written for it.
+// here too, because no further rows were ever written for it. Same CSM-mode
+// vs flat-fee-mode branch as syncClientManagementPay, decided the same way
+// (by the employee's own rate fields).
 export function getClientManagementSummary(employeeId: number): ClientManagementSummaryRow[] {
   const db = getDb();
+  const employee = getEmployeeById(employeeId);
   const rows = getTrackingForEmployee(employeeId);
   const today = todayStr();
+  const isCsmMode = (employee?.client_onboard_launch_bonus ?? 0) > 0 || (employee?.client_management_monthly_fee ?? 0) > 0;
 
   return rows.map(row => {
+    if (!isCsmMode) {
+      const feeRow = db.prepare(`
+        SELECT COALESCE(SUM(pb.amount), 0) AS total FROM pay_period_bonuses pb
+        JOIN pay_periods p ON p.id = pb.pay_period_id
+        WHERE p.employee_id = ? AND pb.description = ?
+      `).get(employeeId, accountFeeDescription(row.clientName)) as any;
+      const feeTotal = feeRow?.total ?? 0;
+      return {
+        id: row.id, clientId: row.client_id, clientName: row.clientName,
+        launchedAt: row.launched_at, active: !!row.active,
+        onboardLaunchBonusEarned: feeTotal > 0, managementPaymentsCharged: 0, nextPaymentDate: null,
+        totalEarned: feeTotal,
+      };
+    }
+
     const bonusRow = db.prepare(`
       SELECT COALESCE(SUM(pb.amount), 0) AS total FROM pay_period_bonuses pb
       JOIN pay_periods p ON p.id = pb.pay_period_id

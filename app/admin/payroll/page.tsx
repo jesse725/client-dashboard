@@ -312,11 +312,13 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
                 </div>
               )}
 
-              <ClientManagementSection
-                employeeId={employee.id}
-                tracking={detail.clientTracking ?? []}
-                onChange={() => { loadDetail(); onChange(); }}
-              />
+              {(employee.client_onboard_launch_bonus > 0 || employee.client_management_monthly_fee > 0 || employee.per_client_fee > 0) && (
+                <ClientManagementSection
+                  employee={employee}
+                  tracking={detail.clientTracking ?? []}
+                  onChange={() => { loadDetail(); onChange(); }}
+                />
+              )}
 
               {detail.periods.length > 1 && (
                 <div className="card-2 overflow-hidden">
@@ -356,16 +358,24 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
   );
 }
 
-// ── Client Management (CSM-style onboarding+launch bonus / ongoing fee) ─────
-// Which real clients this employee onboarded/launched/is managing, and what
-// that earns them — picked from the same client roster the rest of the app
-// uses, not a freeform list. The dollar totals shown here are read straight
-// back from the real bonus line items the server already generated (see
-// lib/clientManagement.ts) — this is a view onto real pay, not a separate
-// estimate that could drift from what's actually in the current/past periods.
-function ClientManagementSection({ employeeId, tracking, onChange }: {
-  employeeId: number; tracking: any[]; onChange: () => void;
+// ── Client Management ────────────────────────────────────────────────────────
+// Which real clients this employee handles, and what that earns them — picked
+// from the same client roster the rest of the app uses, not a freeform list.
+// The dollar totals shown here are read straight back from the real bonus
+// line items the server already generated (see lib/clientManagement.ts) —
+// this is a view onto real pay, not a separate estimate that could drift.
+// Two modes, decided by which rate fields are actually set on the employee
+// (never by name — see lib/clientManagement.ts's own note on this):
+//   • CSM mode (client_onboard_launch_bonus / client_management_monthly_fee)
+//     — one launch date per client drives a $100 bonus + recurring $150/mo.
+//   • Flat per-account mode (per_client_fee only) — just a running count of
+//     accounts, no dates; each one is a flat one-time fee.
+function ClientManagementSection({ employee, tracking, onChange }: {
+  employee: any; tracking: any[]; onChange: () => void;
 }) {
+  const employeeId = employee.id;
+  const isCsmMode = employee.client_onboard_launch_bonus > 0 || employee.client_management_monthly_fee > 0;
+
   const [showAdd, setShowAdd] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [loadingClients, setLoadingClients] = useState(false);
@@ -409,14 +419,20 @@ function ClientManagementSection({ employeeId, tracking, onChange }: {
   };
 
   const total = tracking.reduce((s, t) => s + t.totalEarned, 0);
+  const title = isCsmMode ? 'Client Management' : 'Accounts';
+  const addLabel = isCsmMode ? 'Add Client' : 'Add Account';
+  const emptyLabel = isCsmMode
+    ? 'No clients tracked yet — add one to start logging the launch date.'
+    : 'No accounts logged yet — add one for each account done.';
+  const totalLabel = isCsmMode ? 'Total — Client Management' : `Total — ${tracking.length} account${tracking.length === 1 ? '' : 's'} × ${fmt$(employee.per_client_fee)}`;
 
   return (
     <div className="card-2 overflow-hidden">
       <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
         <p className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-          <Rocket size={12} /> Client Management
+          <Rocket size={12} /> {title}
         </p>
-        <button onClick={openAdd} className="btn-ghost text-xs flex items-center gap-1"><Plus size={12} /> Add Client</button>
+        <button onClick={openAdd} className="btn-ghost text-xs flex items-center gap-1"><Plus size={12} /> {addLabel}</button>
       </div>
 
       {showAdd && (
@@ -437,25 +453,44 @@ function ClientManagementSection({ employeeId, tracking, onChange }: {
       )}
 
       {tracking.length === 0 ? (
-        <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>No clients tracked yet — add one to start logging onboarding/launch dates.</p>
+        <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>{emptyLabel}</p>
       ) : (
         <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
           {tracking.map(t => (
-            <ClientTrackingRow
-              key={t.id} tracking={t}
-              onUpdate={updates => updateTracking(t.id, updates)}
-              onRemove={() => removeTracking(t.id)}
-            />
+            isCsmMode ? (
+              <ClientTrackingRow
+                key={t.id} tracking={t}
+                onUpdate={updates => updateTracking(t.id, updates)}
+                onRemove={() => removeTracking(t.id)}
+              />
+            ) : (
+              <SimpleAccountRow key={t.id} tracking={t} onRemove={() => removeTracking(t.id)} />
+            )
           ))}
         </div>
       )}
 
       {tracking.length > 0 && (
         <div className="px-4 py-2.5 flex items-center justify-between text-sm font-bold" style={{ borderTop: '1px solid var(--border)' }}>
-          <span>Total — Client Management</span>
+          <span>{totalLabel}</span>
           <span>{fmt$(total)}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// Flat per-account mode (e.g. Bolu) — just a count of accounts done and the
+// flat fee each one earned. No dates, no active toggle — "did this account"
+// is a permanent record, not an ongoing management state to track.
+function SimpleAccountRow({ tracking, onRemove }: { tracking: any; onRemove: () => void }) {
+  return (
+    <div className="px-4 py-2.5 flex items-center justify-between text-sm">
+      <span className="truncate">{tracking.clientName}</span>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="font-semibold" style={{ color: 'var(--green)' }}>{fmt$(tracking.totalEarned)}</span>
+        <button onClick={onRemove} className="opacity-50 hover:opacity-100"><Trash2 size={12} /></button>
+      </div>
     </div>
   );
 }
