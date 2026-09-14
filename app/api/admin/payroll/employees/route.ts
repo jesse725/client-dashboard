@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server';
 import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { ensureCurrentPeriod, getPeriodWithTotal, getPeriodForDate } from '@/lib/payroll';
-import { syncClientManagementPay } from '@/lib/clientManagement';
+import { syncClientManagementPay, getClientManagementSummary } from '@/lib/clientManagement';
 
 // Payroll is Jesse-only, same as the rest of this app's financial data —
-// other admins can't see coworkers' pay.
+// other admins can't see coworkers' pay. The Internals Hub reads this same
+// endpoint (role/responsibilities/contract/clientTracking are all here
+// already) rather than duplicating this fetch+sync logic elsewhere.
 export async function GET() {
   const auth = await requireFinancialAccess();
   if (!auth.ok) return auth.response;
@@ -14,11 +16,11 @@ export async function GET() {
   const employees = db.prepare('SELECT * FROM employees ORDER BY active DESC, name').all() as any[];
 
   const withCurrentPeriod = employees.map(e => {
-    if (!e.active) return { ...e, currentPeriod: null };
+    if (!e.active) return { ...e, currentPeriod: null, clientTracking: [] };
     // No-op for employees with no tracked clients — cheap to call for everyone.
     syncClientManagementPay(e.id);
     const periodId = ensureCurrentPeriod(e.id);
-    return { ...e, currentPeriod: getPeriodWithTotal(periodId) };
+    return { ...e, currentPeriod: getPeriodWithTotal(periodId), clientTracking: getClientManagementSummary(e.id) };
   });
 
   // Same payout schedule for everyone, so one date covers the whole roster.

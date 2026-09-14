@@ -69,6 +69,7 @@ export interface Employee {
   assigned_to: string | null; // display name of the admin/staff member who owns this employee's payroll card
   client_onboard_launch_bonus: number; // one-time bonus once a tracked client has a launch date logged (onboarding + launch calls done)
   client_management_monthly_fee: number; // recurring monthly fee per active tracked client, starting the first paycheck 30+ days after launch
+  responsibilities: string | null; // free-text "what this person actually does" — shown on the Internals Hub
   notes: string | null;
   created_at: string;
 }

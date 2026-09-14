@@ -374,6 +374,10 @@ function initSchema(db: Database.Database) {
   // a second employee with a similar role can have different rates.
   if (!employeeCols.includes('client_onboard_launch_bonus')) db.exec('ALTER TABLE employees ADD COLUMN client_onboard_launch_bonus REAL NOT NULL DEFAULT 100');
   if (!employeeCols.includes('client_management_monthly_fee')) db.exec('ALTER TABLE employees ADD COLUMN client_management_monthly_fee REAL NOT NULL DEFAULT 150');
+  // Free-text "what this person actually does" — the Internals Hub's own
+  // field, distinct from `role` (a short title) and `notes` (payroll-specific
+  // caveats like unverified seed figures).
+  if (!employeeCols.includes('responsibilities')) db.exec('ALTER TABLE employees ADD COLUMN responsibilities TEXT');
 
   seedPayrollData(db);
   seedIncomeData(db);

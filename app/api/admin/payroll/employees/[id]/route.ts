@@ -28,6 +28,7 @@ const ALLOWED_FIELDS: Record<string, string> = {
   paymentMethod: 'payment_method', agreementUrl: 'agreement_url', assignedTo: 'assigned_to',
   clientOnboardLaunchBonus: 'client_onboard_launch_bonus',
   clientManagementMonthlyFee: 'client_management_monthly_fee',
+  responsibilities: 'responsibilities',
 };
 
 const VALID_PAYMENT_METHODS = ['bank_transfer', 'wise', 'paypal', 'check', 'other'];
