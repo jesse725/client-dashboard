@@ -75,17 +75,6 @@ function nextPayoutPeriodOnOrAfter(dateStr: string): PeriodBounds {
   return getPeriodForDate(new Date(dateStr + 'T00:00:00'));
 }
 
-// Same half of the month (1st–14th vs 15th–EOM), one calendar month on.
-// Stepping by whole months keeps the fee on a fixed nominal payout day, so
-// with two payouts a month it recurs on every other paycheck.
-function periodOneMonthLater(bounds: PeriodBounds): PeriodBounds {
-  const [y, m] = bounds.periodStart.split('-').map(Number); // m is 1-indexed
-  // new Date's month arg is 0-indexed, so passing the 1-indexed m lands in
-  // the next month; the day just needs to fall in the right half.
-  const probe = new Date(y, m, bounds.nominalDay === 14 ? 7 : 21);
-  return getPeriodForDate(probe);
-}
-
 function payoutMonthLabel(payoutDate: string): string {
   const [y, m] = payoutDate.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
@@ -104,17 +93,22 @@ function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, m => '\\' + m);
 }
 
-// Every monthly-fee period that has already begun as of `asOf` — the first is
-// the pay period whose payday is the first on or after launch + 30 days, then
-// the same nominal day each month after. Keyed on periodStart (not payday) so
-// a fee for the current period shows up as soon as that period opens, i.e.
-// while this paycheck is still being prepared, not only once payday lands.
+// Every monthly-fee payment due as of `asOf`: the 1st is 30 days after
+// launch, the 2nd is 60 days after, the 3rd 90, and so on — each one paid on
+// the closest payout date on or after its own due date (not 28/28/28 days
+// apart from each other, exactly 30/60/90 days from the launch date itself,
+// same as the very first payment). Recomputed independently per payment
+// straight from launchedAt rather than stepping forward from the previous
+// one, so it can never drift off that anchor over many payments. Keyed on
+// periodStart (not payday) so a fee for the current period shows up as soon
+// as that period opens, i.e. while this paycheck is still being prepared,
+// not only once payday lands.
 function managementFeeSchedule(launchedAt: string, asOf: string): PeriodBounds[] {
   const out: PeriodBounds[] = [];
-  let bounds = nextPayoutPeriodOnOrAfter(addDays(launchedAt, MANAGEMENT_FEE_START_DAYS));
-  for (let i = 0; i < SCHEDULE_SAFETY_CAP && bounds.periodStart <= asOf; i++) {
+  for (let n = 1; n <= SCHEDULE_SAFETY_CAP; n++) {
+    const bounds = nextPayoutPeriodOnOrAfter(addDays(launchedAt, MANAGEMENT_FEE_START_DAYS * n));
+    if (bounds.periodStart > asOf) break;
     out.push(bounds);
-    bounds = periodOneMonthLater(bounds);
   }
   return out;
 }
@@ -274,13 +268,14 @@ export function getClientManagementSummary(employeeId: number): ClientManagement
 
     // The payday of the first monthly-fee period that hasn't opened yet — the
     // "next fee is coming on …" hint. (A fee for a period that HAS opened is
-    // already a real line item, counted above.)
+    // already a real line item, counted above.) Same 30/60/90-day-from-launch
+    // computation as managementFeeSchedule, so this can never disagree with
+    // what actually gets charged.
     let nextPaymentDate: string | null = null;
     if (row.launched_at && row.active) {
-      let bounds = nextPayoutPeriodOnOrAfter(addDays(row.launched_at, MANAGEMENT_FEE_START_DAYS));
-      for (let i = 0; i < SCHEDULE_SAFETY_CAP; i++) {
+      for (let n = 1; n <= SCHEDULE_SAFETY_CAP; n++) {
+        const bounds = nextPayoutPeriodOnOrAfter(addDays(row.launched_at, MANAGEMENT_FEE_START_DAYS * n));
         if (bounds.periodStart > today) { nextPaymentDate = bounds.payoutDate; break; }
-        bounds = periodOneMonthLater(bounds);
       }
     }
 
