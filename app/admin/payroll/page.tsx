@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Users, Plus, ChevronDown, ChevronRight, CheckCircle2, Clock,
-  Trash2, AlertTriangle, FileText, Landmark, UserCog, Timer, Rocket,
+  Trash2, FileText, Landmark, UserCog, LogIn, Timer, Rocket,
 } from 'lucide-react';
 import { PAYMENT_METHODS } from '@/lib/payroll-constants';
 
@@ -54,7 +54,7 @@ function StatusPill({ status }: { status: 'pending' | 'paid' }) {
 }
 
 // ── Employee Card ────────────────────────────────────────────────────────────
-function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any; assignableOptions: string[]; onChange: () => void }) {
+function EmployeeCard({ employee, assignableOptions, adminUsers, onChange }: { employee: any; assignableOptions: string[]; adminUsers: any[]; onChange: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -87,6 +87,7 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
       assignedTo: employee.assigned_to ?? '',
       clientOnboardLaunchBonus: employee.client_onboard_launch_bonus ?? 100,
       clientManagementMonthlyFee: employee.client_management_monthly_fee ?? 150,
+      linkedUserId: employee.linked_user_id ?? '',
       notes: employee.notes ?? '',
     });
     setEditing(true);
@@ -94,7 +95,8 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
 
   const saveEdit = async () => {
     await fetch(`/api/admin/payroll/employees/${employee.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, linkedUserId: form.linkedUserId ? Number(form.linkedUserId) : null }),
     });
     setEditing(false);
     loadDetail();
@@ -147,7 +149,6 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
   };
 
   const inactive = !employee.active;
-  const isPlaceholderEmail = employee.email.endsWith('@example.invalid');
 
   return (
     <div className="card overflow-hidden" style={{ opacity: inactive ? 0.6 : 1 }}>
@@ -167,13 +168,6 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
 
       {expanded && (
         <div className="p-3 space-y-3" style={{ borderTop: '1px solid var(--border)' }}>
-          {isPlaceholderEmail && (
-            <div className="text-xs p-2.5 rounded-lg flex items-start gap-2" style={{ background: 'rgba(245,158,11,0.1)', color: 'var(--yellow)' }}>
-              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-              <span>This employee has a placeholder email ({employee.email}) — they can't log in until you set their real one.</span>
-            </div>
-          )}
-
           {loadingDetail || !detail ? (
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading…</p>
           ) : editing ? (
@@ -209,6 +203,13 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
                 <Field label="Onboard+Launch bonus ($)"><input type="number" className="input text-sm" value={form.clientOnboardLaunchBonus} onChange={e => setForm({ ...form, clientOnboardLaunchBonus: Number(e.target.value) })} /></Field>
                 <Field label="Client mgmt fee ($/mo)"><input type="number" className="input text-sm" value={form.clientManagementMonthlyFee} onChange={e => setForm({ ...form, clientManagementMonthlyFee: Number(e.target.value) })} /></Field>
               </div>
+              <Field label="Linked Login (Team/Admin account)">
+                <select className="input text-sm w-full" value={form.linkedUserId} onChange={e => setForm({ ...form, linkedUserId: e.target.value })}>
+                  <option value="">Not linked — logs in via their own email only</option>
+                  {adminUsers.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                </select>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Lets them see their own payroll by signing in with this Team/Admin account instead of a separate employee email.</p>
+              </Field>
               <Field label="Employment Agreement URL"><input className="input text-sm w-full" placeholder="Link to signed agreement (Drive, Dropbox, etc.)" value={form.agreementUrl} onChange={e => setForm({ ...form, agreementUrl: e.target.value })} /></Field>
               <Field label="Notes"><textarea className="input text-sm w-full" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
               <div className="flex justify-end gap-2">
@@ -234,6 +235,12 @@ function EmployeeCard({ employee, assignableOptions, onChange }: { employee: any
                   <span className="text-right font-medium">{methodLabel(employee.payment_method)}</span>
                   <span style={{ color: 'var(--text-muted)' }} className="flex items-center gap-1"><UserCog size={12} /> Assigned to</span>
                   <span className="text-right font-medium">{employee.assigned_to || '—'}</span>
+                  <span style={{ color: 'var(--text-muted)' }} className="flex items-center gap-1"><LogIn size={12} /> Linked login</span>
+                  <span className="text-right font-medium">
+                    {employee.linked_user_id
+                      ? (adminUsers.find(u => u.id === employee.linked_user_id)?.name ?? `User #${employee.linked_user_id}`)
+                      : 'Own email only'}
+                  </span>
                 </div>
                 {employee.agreement_url && (
                   <a href={employee.agreement_url} target="_blank" rel="noopener noreferrer"
@@ -641,7 +648,7 @@ export default function AdminPayrollPage() {
   const user = session?.user as any;
   const [employees, setEmployees] = useState<any[]>([]);
   const [nextPayoutDate, setNextPayoutDate] = useState<string | null>(null);
-  const [adminNames, setAdminNames] = useState<string[]>([]);
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -663,7 +670,7 @@ export default function AdminPayrollPage() {
     if (status === 'authenticated' && user?.role === 'admin' && user?.canViewFinancials) {
       load();
       fetch('/api/users').then(r => r.json()).then(users => {
-        setAdminNames((Array.isArray(users) ? users : []).filter((u: any) => u.role === 'admin').map((u: any) => u.name));
+        setAdminUsers((Array.isArray(users) ? users : []).filter((u: any) => u.role === 'admin'));
       });
     }
   }, [status, user, load]);
@@ -684,7 +691,7 @@ export default function AdminPayrollPage() {
   // Assignment picker sources admin accounts only (from /api/users) — an
   // employee card is "assigned to" whichever admin owns/manages that
   // relationship, not to another payroll employee.
-  const assignableOptions = Array.from(new Set(adminNames)).sort();
+  const assignableOptions = Array.from(new Set(adminUsers.map(u => u.name))).sort();
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
@@ -721,7 +728,7 @@ export default function AdminPayrollPage() {
         </div>
 
         <div className="space-y-2">
-          {employees.map(e => <EmployeeCard key={e.id} employee={e} assignableOptions={assignableOptions} onChange={load} />)}
+          {employees.map(e => <EmployeeCard key={e.id} employee={e} assignableOptions={assignableOptions} adminUsers={adminUsers} onChange={load} />)}
         </div>
       </div>
 

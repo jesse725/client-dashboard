@@ -29,6 +29,7 @@ const ALLOWED_FIELDS: Record<string, string> = {
   clientOnboardLaunchBonus: 'client_onboard_launch_bonus',
   clientManagementMonthlyFee: 'client_management_monthly_fee',
   responsibilities: 'responsibilities',
+  linkedUserId: 'linked_user_id',
 };
 
 const VALID_PAYMENT_METHODS = ['bank_transfer', 'wise', 'paypal', 'check', 'other'];

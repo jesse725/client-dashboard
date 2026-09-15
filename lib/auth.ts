@@ -75,6 +75,15 @@ export const authOptions: NextAuthOptions = {
         if (!user) return null;
         const valid = await bcrypt.compare(credentials.password, user.password_hash);
         if (!valid) return null;
+        // If an employee record is linked to this exact user account, thread
+        // that employeeId onto the session too — alongside their normal role,
+        // not instead of it, so a linked admin keeps their admin access and
+        // additionally can reach their own payroll. Keyed strictly off this
+        // authenticated user's own id, same "derive from the session, never
+        // from anything the client sends" rule requireEmployeeAccess relies on.
+        const linkedEmployee = db.prepare(
+          'SELECT id FROM employees WHERE linked_user_id = ? AND active = 1'
+        ).get(user.id) as any;
         return {
           id: String(user.id),
           email: user.email,
@@ -82,6 +91,7 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           clientId: user.client_id ? String(user.client_id) : null,
           canViewFinancials: canViewFinancials(user.email),
+          employeeId: linkedEmployee ? String(linkedEmployee.id) : null,
         };
       },
     }),
@@ -131,12 +141,18 @@ export async function requireFinancialAccess(): Promise<{ ok: true } | { ok: fal
 // query and must never accept an employeeId from the request (body/query/
 // params) for a "my own data" route, or a signed-in employee could read
 // someone else's pay by just changing an id in the request.
+// Keyed on employeeId presence alone, not role === 'employee' — a Team/Admin
+// user linked to an employee record (see lib/db.ts's linked_user_id) carries
+// role: 'admin' plus this employeeId, and needs this guard to pass too.
+// employeeId only ever gets set server-side (authorize(), keyed off the
+// authenticated user's own id or a direct employees-table email match), so
+// this can't be spoofed by anything the client sends.
 export async function requireEmployeeAccess(): Promise<
   { ok: true; employeeId: number } | { ok: false; response: NextResponse }
 > {
   const session = await getServerSession(authOptions);
   const user = session?.user as any;
-  if (!session || user?.role !== 'employee' || !user?.employeeId) {
+  if (!session || !user?.employeeId) {
     return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   }
   return { ok: true, employeeId: Number(user.employeeId) };

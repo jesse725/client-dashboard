@@ -70,6 +70,7 @@ export interface Employee {
   client_onboard_launch_bonus: number; // one-time bonus once a tracked client has a launch date logged (onboarding + launch calls done)
   client_management_monthly_fee: number; // recurring monthly fee per active tracked client, starting the first paycheck 30+ days after launch
   responsibilities: string | null; // free-text "what this person actually does" — shown on the Internals Hub
+  linked_user_id: number | null; // users.id — lets them log in via their Team/Admin account instead of a separate employee email
   notes: string | null;
   created_at: string;
 }

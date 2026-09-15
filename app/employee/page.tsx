@@ -57,11 +57,14 @@ export default function EmployeePayrollPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
-    if (status === 'authenticated' && user?.role !== 'employee') router.push('/login');
+    // employeeId, not role === 'employee' — a Team/Admin user linked to an
+    // employee record (lib/db.ts's linked_user_id) reaches this page too,
+    // keeping their own role, so this checks the same signal the API does.
+    if (status === 'authenticated' && !user?.employeeId) router.push('/login');
   }, [status, user, router]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || user?.role !== 'employee') return;
+    if (status !== 'authenticated' || !user?.employeeId) return;
     fetch('/api/employee/payroll').then(r => r.json()).then(d => { setData(d); setLoading(false); });
   }, [status, user]);
 
@@ -69,7 +72,7 @@ export default function EmployeePayrollPage() {
   // — optional chaining keeps it safe while `data` is still null during load.
   const countdown = useCountdown(data?.currentPeriod?.status === 'pending' ? data.currentPeriod.payout_date : null);
 
-  if (status !== 'authenticated' || user?.role !== 'employee' || loading || !data) {
+  if (status !== 'authenticated' || !user?.employeeId || loading || !data) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>

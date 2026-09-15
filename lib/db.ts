@@ -383,6 +383,12 @@ function initSchema(db: Database.Database) {
   // field, distinct from `role` (a short title) and `notes` (payroll-specific
   // caveats like unverified seed figures).
   if (!employeeCols.includes('responsibilities')) db.exec('ALTER TABLE employees ADD COLUMN responsibilities TEXT');
+  // Lets an employee log in through their EXISTING Team/Admin account
+  // (email+password against `users`) instead of needing a separate
+  // email-only employee login — pick which user account this employee
+  // record belongs to, and that user's session carries this employeeId
+  // alongside whatever role they already have. See lib/auth.ts.
+  if (!employeeCols.includes('linked_user_id')) db.exec('ALTER TABLE employees ADD COLUMN linked_user_id INTEGER REFERENCES users(id)');
 
   // One-time correction: an earlier migration defaulted the two columns
   // above to Mo's own 100/150 for every existing row, not just his. Zero it

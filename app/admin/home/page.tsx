@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BarChart2, TrendingUp, Plus, Settings2, DollarSign, Users, BookUser } from 'lucide-react';
+import { BarChart2, TrendingUp, Plus, Settings2, DollarSign, Users, BookUser, Wallet } from 'lucide-react';
 
 export default function AdminHomePage() {
   const { data: session, status } = useSession();
@@ -38,6 +38,18 @@ export default function AdminHomePage() {
       icon: <Plus size={22} />,
       color: 'var(--yellow)',
     },
+    // Shown whenever this login is linked to an employee record (lib/db.ts's
+    // linked_user_id) — independent of canViewFinancials, since seeing your
+    // own pay doesn't require Jesse-level access to everyone else's.
+    ...(user?.employeeId ? [
+      {
+        href: '/employee',
+        title: 'My Payroll',
+        desc: 'Your own pay periods, payment history & payroll schedule',
+        icon: <Wallet size={22} />,
+        color: 'var(--green)',
+      },
+    ] : []),
     ...(user?.canViewFinancials ? [
       {
         href: '/admin/sales',
