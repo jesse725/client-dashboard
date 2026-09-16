@@ -84,6 +84,8 @@ export interface EmployeeClientTracking {
   client_id: number;
   launched_at: string | null; // YYYY-MM-DD — the one date to log; onboarding + launch calls are done as of this date
   active: number; // 0/1 — still being managed; gates further monthly-fee accrual, not past fees already paid
+  bonus_override: number | null; // NULL = use the employee's flat rate for this client's one-time amount
+  fee_override: number | null; // NULL = use the employee's flat rate for this client's recurring monthly fee
   created_at: string;
 }
 

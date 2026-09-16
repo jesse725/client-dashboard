@@ -354,6 +354,12 @@ function initSchema(db: Database.Database) {
       client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
       launched_at TEXT,
       active INTEGER NOT NULL DEFAULT 1,
+      -- NULL = use the employee's own flat rate; set = this specific client
+      -- pays something different. bonus_override stands in for whichever
+      -- one-time amount applies (Mo's onboard+launch bonus, or Bolu's flat
+      -- per-account fee); fee_override is Mo-mode's recurring monthly piece.
+      bonus_override REAL,
+      fee_override REAL,
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(employee_id, client_id)
     );
@@ -389,6 +395,13 @@ function initSchema(db: Database.Database) {
   // record belongs to, and that user's session carries this employeeId
   // alongside whatever role they already have. See lib/auth.ts.
   if (!employeeCols.includes('linked_user_id')) db.exec('ALTER TABLE employees ADD COLUMN linked_user_id INTEGER REFERENCES users(id)');
+
+  // Migrations for employee_client_tracking — per-client overrides on top of
+  // the employee's own flat rate. Must run after the block above, since
+  // that's where this table is first created.
+  const trackingCols = (db.prepare("PRAGMA table_info(employee_client_tracking)").all() as any[]).map((c: any) => c.name);
+  if (!trackingCols.includes('bonus_override')) db.exec('ALTER TABLE employee_client_tracking ADD COLUMN bonus_override REAL');
+  if (!trackingCols.includes('fee_override')) db.exec('ALTER TABLE employee_client_tracking ADD COLUMN fee_override REAL');
 
   // One-time correction: an earlier migration defaulted the two columns
   // above to Mo's own 100/150 for every existing row, not just his. Zero it

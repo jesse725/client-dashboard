@@ -30,13 +30,18 @@ export function addClientTracking(employeeId: number, clientId: number): number 
 
 export function updateClientTracking(
   id: number,
-  updates: { launchedAt?: string | null; active?: boolean }
+  updates: { launchedAt?: string | null; active?: boolean; bonusOverride?: number | null; feeOverride?: number | null }
 ) {
   const db = getDb();
   const sets: string[] = [];
   const values: any[] = [];
   if ('launchedAt' in updates) { sets.push('launched_at = ?'); values.push(updates.launchedAt || null); }
   if ('active' in updates) { sets.push('active = ?'); values.push(updates.active ? 1 : 0); }
+  // null clears the override (falls back to the employee's flat rate) —
+  // distinct from 0, which is a deliberate "$0 for this client" override, so
+  // this must NOT collapse via `|| null` the way launchedAt does above.
+  if ('bonusOverride' in updates) { sets.push('bonus_override = ?'); values.push(updates.bonusOverride); }
+  if ('feeOverride' in updates) { sets.push('fee_override = ?'); values.push(updates.feeOverride); }
   if (sets.length === 0) return;
   values.push(id);
   db.prepare(`UPDATE employee_client_tracking SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -178,13 +183,20 @@ export function syncClientManagementPay(employeeId: number) {
   };
 
   for (const row of rows) {
+    // bonus_override/fee_override let a specific client pay something other
+    // than the employee's flat rate — NULL means "use the flat rate", not
+    // "$0". Changing an override only ever affects payments not yet
+    // materialized: bonusExists dedupes by description text alone (not
+    // amount), so a payment already charged at the old rate is never
+    // rewritten — only the next not-yet-due one picks up the new rate.
     if (!isCsmMode) {
       // Flat per-account mode — no date field in the UI, so the tracking
       // row's own created_at is the trigger: adding the account IS the event.
-      if (perAccountFee > 0) {
+      const effectiveFee = row.bonus_override ?? perAccountFee;
+      if (effectiveFee > 0) {
         const description = accountFeeDescription(row.clientName);
         if (!bonusExists(description)) {
-          addBonus(nextPayoutPeriodOnOrAfter(row.created_at.slice(0, 10)), description, perAccountFee);
+          addBonus(nextPayoutPeriodOnOrAfter(row.created_at.slice(0, 10)), description, effectiveFee);
         }
       }
       continue;
@@ -192,17 +204,19 @@ export function syncClientManagementPay(employeeId: number) {
 
     if (!row.launched_at) continue;
 
-    if (onboardLaunchBonus > 0) {
+    const effectiveBonus = row.bonus_override ?? onboardLaunchBonus;
+    if (effectiveBonus > 0) {
       const description = onboardLaunchBonusDescription(row.clientName);
       if (!bonusExists(description)) {
-        addBonus(nextPayoutPeriodOnOrAfter(row.launched_at), description, onboardLaunchBonus);
+        addBonus(nextPayoutPeriodOnOrAfter(row.launched_at), description, effectiveBonus);
       }
     }
 
-    if (row.active && managementFee > 0) {
+    const effectiveFee = row.fee_override ?? managementFee;
+    if (row.active && effectiveFee > 0) {
       for (const bounds of managementFeeSchedule(row.launched_at, today)) {
         const description = managementFeeDescription(row.clientName, payoutMonthLabel(bounds.payoutDate));
-        if (!bonusExists(description)) addBonus(bounds, description, managementFee);
+        if (!bonusExists(description)) addBonus(bounds, description, effectiveFee);
       }
     }
   }
@@ -218,6 +232,10 @@ export interface ClientManagementSummaryRow {
   managementPaymentsCharged: number;
   nextPaymentDate: string | null; // next monthly-fee payout not yet reached, for display
   totalEarned: number;
+  bonusOverride: number | null; // this client's one-time amount, if overridden — NULL means using the employee's flat rate
+  feeOverride: number | null; // this client's recurring monthly amount, if overridden (CSM mode only)
+  effectiveBonus: number; // bonusOverride ?? the employee's flat rate — what actually gets charged
+  effectiveFee: number; // feeOverride ?? the employee's flat rate (0 in flat-fee mode, which has no recurring piece)
 }
 
 // Read-only summary for the tracker UI — grouped by client, unlike the flat
@@ -248,6 +266,8 @@ export function getClientManagementSummary(employeeId: number): ClientManagement
         launchedAt: row.launched_at, active: !!row.active,
         onboardLaunchBonusEarned: feeTotal > 0, managementPaymentsCharged: 0, nextPaymentDate: null,
         totalEarned: feeTotal,
+        bonusOverride: row.bonus_override, feeOverride: null,
+        effectiveBonus: row.bonus_override ?? (employee?.per_client_fee ?? 0), effectiveFee: 0,
       };
     }
 
@@ -289,6 +309,9 @@ export function getClientManagementSummary(employeeId: number): ClientManagement
       managementPaymentsCharged: managementRow?.cnt ?? 0,
       nextPaymentDate,
       totalEarned: bonusTotal + managementTotal,
+      bonusOverride: row.bonus_override, feeOverride: row.fee_override,
+      effectiveBonus: row.bonus_override ?? (employee?.client_onboard_launch_bonus ?? 0),
+      effectiveFee: row.fee_override ?? (employee?.client_management_monthly_fee ?? 0),
     };
   });
 }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Users, Plus, ChevronDown, ChevronRight, CheckCircle2, Clock,
-  Trash2, FileText, Landmark, UserCog, LogIn, Timer, Rocket,
+  Trash2, FileText, Landmark, UserCog, LogIn, Timer, Rocket, RotateCcw,
 } from 'lucide-react';
 import { PAYMENT_METHODS } from '@/lib/payroll-constants';
 
@@ -387,6 +387,7 @@ function ClientManagementSection({ employee, tracking, onChange }: {
   const [clients, setClients] = useState<any[]>([]);
   const [loadingClients, setLoadingClients] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [addAmount, setAddAmount] = useState('');
   const [saving, setSaving] = useState(false);
 
   const openAdd = () => {
@@ -405,9 +406,10 @@ function ClientManagementSection({ employee, tracking, onChange }: {
     setSaving(true);
     await fetch(`/api/admin/payroll/employees/${employeeId}/client-tracking`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId: Number(selectedClientId) }),
+      body: JSON.stringify({ clientId: Number(selectedClientId), ...(addAmount ? { bonusOverride: Number(addAmount) } : {}) }),
     });
     setSelectedClientId('');
+    setAddAmount('');
     setShowAdd(false);
     setSaving(false);
     onChange();
@@ -452,8 +454,18 @@ function ClientManagementSection({ employee, tracking, onChange }: {
                 <option value="">Select client…</option>
                 {availableClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {!isCsmMode && (
+                // Flat-fee mode fires the moment a client is added, so the
+                // rate has to be settable right here — anything set on the
+                // row afterward would always be too late for this client's
+                // one-time charge.
+                <input
+                  type="number" className="input text-sm w-20 shrink-0" placeholder={String(employee.per_client_fee)}
+                  value={addAmount} onChange={e => setAddAmount(e.target.value)}
+                />
+              )}
               <button onClick={addClient} disabled={saving || !selectedClientId} className="btn-primary text-xs px-3 shrink-0">Add</button>
-              <button onClick={() => setShowAdd(false)} className="btn-ghost text-xs px-2 shrink-0">Cancel</button>
+              <button onClick={() => { setShowAdd(false); setAddAmount(''); }} className="btn-ghost text-xs px-2 shrink-0">Cancel</button>
             </>
           )}
         </div>
@@ -471,7 +483,11 @@ function ClientManagementSection({ employee, tracking, onChange }: {
                 onRemove={() => removeTracking(t.id)}
               />
             ) : (
-              <SimpleAccountRow key={t.id} tracking={t} onRemove={() => removeTracking(t.id)} />
+              <SimpleAccountRow
+                key={t.id} tracking={t}
+                onUpdate={updates => updateTracking(t.id, updates)}
+                onRemove={() => removeTracking(t.id)}
+              />
             )
           ))}
         </div>
@@ -487,16 +503,50 @@ function ClientManagementSection({ employee, tracking, onChange }: {
   );
 }
 
+// A per-client amount that defaults to the employee's flat rate but can be
+// overridden — clearing it back to the shown default (or hitting revert)
+// deletes the override rather than storing "$150" as a redundant explicit
+// value, so it keeps tracking the employee's rate if that ever changes.
+function OverrideAmountInput({ label, effective, override, onSave, onRevert }: {
+  label: string; effective: number; override: number | null; onSave: (v: number) => void; onRevert: () => void;
+}) {
+  return (
+    <div className="shrink-0">
+      <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
+      <div className="flex items-center gap-1">
+        <input
+          type="number" className="input text-xs w-20" defaultValue={effective}
+          key={effective}
+          onBlur={e => {
+            const v = Number(e.target.value);
+            if (v === effective) return;
+            onSave(v);
+          }}
+        />
+        {override != null && (
+          <button onClick={onRevert} title="Revert to the employee's default rate" className="opacity-50 hover:opacity-100"><RotateCcw size={11} /></button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Flat per-account mode (e.g. Bolu) — just a count of accounts done and the
 // flat fee each one earned. No dates, no active toggle — "did this account"
 // is a permanent record, not an ongoing management state to track.
-function SimpleAccountRow({ tracking, onRemove }: { tracking: any; onRemove: () => void }) {
+function SimpleAccountRow({ tracking, onUpdate, onRemove }: {
+  tracking: any; onUpdate: (updates: any) => void; onRemove: () => void;
+}) {
   return (
-    <div className="px-4 py-2.5 flex items-center justify-between text-sm">
+    <div className="px-4 py-2.5 flex items-center justify-between text-sm gap-3">
       <span className="truncate">{tracking.clientName}</span>
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="font-semibold" style={{ color: 'var(--green)' }}>{fmt$(tracking.totalEarned)}</span>
-        <button onClick={onRemove} className="opacity-50 hover:opacity-100"><Trash2 size={12} /></button>
+      <div className="flex items-end gap-2 shrink-0">
+        <OverrideAmountInput
+          label="Fee ($)" effective={tracking.effectiveBonus} override={tracking.bonusOverride}
+          onSave={v => onUpdate({ bonusOverride: v })} onRevert={() => onUpdate({ bonusOverride: null })}
+        />
+        <span className="font-semibold pb-1.5" style={{ color: 'var(--green)' }}>{fmt$(tracking.totalEarned)}</span>
+        <button onClick={onRemove} className="opacity-50 hover:opacity-100 pb-1.5"><Trash2 size={12} /></button>
       </div>
     </div>
   );
@@ -514,7 +564,7 @@ function ClientTrackingRow({ tracking, onUpdate, onRemove }: {
           <button onClick={onRemove} className="opacity-50 hover:opacity-100"><Trash2 size={12} /></button>
         </div>
       </div>
-      <div className="flex items-end gap-3 mb-2">
+      <div className="flex items-end gap-3 mb-2 flex-wrap">
         <div className="shrink-0">
           <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Launch date</label>
           <input
@@ -523,6 +573,14 @@ function ClientTrackingRow({ tracking, onUpdate, onRemove }: {
             onBlur={e => { if (e.target.value !== (tracking.launchedAt ?? '')) onUpdate({ launchedAt: e.target.value || null }); }}
           />
         </div>
+        <OverrideAmountInput
+          label="Bonus ($)" effective={tracking.effectiveBonus} override={tracking.bonusOverride}
+          onSave={v => onUpdate({ bonusOverride: v })} onRevert={() => onUpdate({ bonusOverride: null })}
+        />
+        <OverrideAmountInput
+          label="Monthly fee ($)" effective={tracking.effectiveFee} override={tracking.feeOverride}
+          onSave={v => onUpdate({ feeOverride: v })} onRevert={() => onUpdate({ feeOverride: null })}
+        />
         <label className="flex items-center gap-1.5 cursor-pointer text-xs pb-2" style={{ color: 'var(--text-muted)' }}>
           <input type="checkbox" checked={tracking.active} onChange={e => onUpdate({ active: e.target.checked })} />
           Actively managing

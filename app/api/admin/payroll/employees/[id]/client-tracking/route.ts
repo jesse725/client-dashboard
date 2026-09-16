@@ -19,11 +19,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!auth.ok) return auth.response;
 
   const { id } = await params;
-  const { clientId } = await req.json();
+  const { clientId, bonusOverride } = await req.json();
   if (!clientId) return NextResponse.json({ error: 'clientId is required' }, { status: 400 });
 
   try {
-    addClientTracking(Number(id), Number(clientId));
+    const trackingId = addClientTracking(Number(id), Number(clientId));
+    // Set an initial override BEFORE the first sync below, if one was given —
+    // flat-fee mode (Bolu) fires its one-time charge the instant a client is
+    // added, so an override applied afterward would always be too late to
+    // affect a fee that's already fired at the default rate.
+    if (bonusOverride != null) updateClientTracking(trackingId, { bonusOverride: Number(bonusOverride) });
   } catch (e: any) {
     if (String(e.message).includes('UNIQUE')) {
       return NextResponse.json({ error: 'That client is already tracked for this employee' }, { status: 409 });
@@ -50,9 +55,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // passing an unconditional `active: cond ? x : undefined` here would
   // silently reset active to false on every launch-date-only edit. Omit the
   // key entirely instead of passing it as undefined.
-  const updates: { launchedAt?: string | null; active?: boolean } = {};
+  const updates: { launchedAt?: string | null; active?: boolean; bonusOverride?: number | null; feeOverride?: number | null } = {};
   if ('launchedAt' in body) updates.launchedAt = body.launchedAt;
   if ('active' in body) updates.active = !!body.active;
+  if ('bonusOverride' in body) updates.bonusOverride = body.bonusOverride === null ? null : Number(body.bonusOverride);
+  if ('feeOverride' in body) updates.feeOverride = body.feeOverride === null ? null : Number(body.feeOverride);
   updateClientTracking(Number(trackingId), updates);
 
   // Setting a date or re-activating may just now satisfy a bonus/fee
