@@ -46,11 +46,20 @@ export async function PATCH(req: NextRequest) {
 
   for (const [key, value] of Object.entries(body)) {
     if (!ALLOWED_KEYS.includes(key)) continue;
-    // Don't overwrite a secret if its masked placeholder was sent back unchanged
-    if (MASKED_KEYS.includes(key) && String(value).includes('•')) continue;
     // Trim whitespace — a stray copy-pasted space/newline silently breaks
     // Authorization headers built from these values (causes a hard 401).
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value).trim());
+    const trimmed = String(value).trim();
+    if (MASKED_KEYS.includes(key)) {
+      // A secret's input box is intentionally blank after a save (the stored
+      // value only ever shows as a masked preview), and the GHL and Whop forms
+      // submit every field together — so "empty" or "the unchanged mask" means
+      // "leave this alone", never "erase it". Without the empty check, saving
+      // the form to change something else (e.g. the sync interval) silently
+      // overwrote the stored GHL/Whop key with a blank and disconnected the
+      // integration until someone re-pasted it.
+      if (!trimmed || trimmed.includes('•')) continue;
+    }
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, trimmed);
   }
 
   return NextResponse.json({ ok: true });

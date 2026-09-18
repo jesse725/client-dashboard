@@ -121,10 +121,42 @@ export async function fetchCustomFields(
 // there's nothing left) or, when GHL reports `meta.total`, until that many
 // have been collected — whichever signal fires first, so a wrong/missing
 // `total` can't cause under- OR over-fetching.
+// Turns a failed GHL response into a message someone can act on. GHL's own
+// error bodies are short JSON ({ message, statusCode }) and never echo the
+// token back, so this is safe to show in the UI.
+async function describeGhlFailure(res: Response): Promise<string> {
+  let detail = '';
+  try {
+    const text = await res.text();
+    try {
+      const j = JSON.parse(text);
+      detail = String(j.message ?? j.error ?? text);
+    } catch {
+      detail = text;
+    }
+  } catch { /* body unreadable — fall through to the status hint alone */ }
+  detail = detail.slice(0, 200);
+
+  const hint =
+    res.status === 401 ? 'GHL rejected the API key (expired, revoked, or not the right key) — re-enter it in Admin Settings > GHL Sync.'
+    : res.status === 403 ? "The API key is valid but isn't allowed to read this location's opportunities — check its scopes/location access in GHL."
+    : res.status === 404 ? "GHL couldn't find that location or pipeline — check the location/pipeline IDs."
+    : res.status === 422 ? 'GHL rejected the request parameters.'
+    : res.status === 429 ? 'GHL rate-limited the request — try again in a minute.'
+    : res.status >= 500 ? 'GHL is having trouble on their end — try again shortly.'
+    : 'Unexpected response from GHL.';
+  return `GHL returned ${res.status}. ${hint}${detail ? ` (GHL said: "${detail}")` : ''}`;
+}
+
+// `strict` makes a non-OK response throw instead of silently stopping. The
+// default (lenient) behavior is what the per-client stats paths have always
+// relied on — an outage there just shows zeros — but the Sales Tracker has no
+// way to tell "no leads" from "GHL rejected us" without it, so it opts in.
 async function fetchAllOpportunitiesRaw(
   apiKey: string,
   locationId: string,
-  pipelineId: string
+  pipelineId: string,
+  opts: { strict?: boolean } = {}
 ): Promise<any[]> {
   const headers = v2Headers(apiKey);
   const limit = 100;
@@ -137,7 +169,10 @@ async function fetchAllOpportunitiesRaw(
     let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&limit=${limit}`;
     if (startAfter) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
     const res = await fetch(url, { headers });
-    if (!res.ok) break;
+    if (!res.ok) {
+      if (opts.strict) throw new Error(await describeGhlFailure(res));
+      break;
+    }
     const data = await res.json();
     const opps: any[] = data.opportunities ?? [];
     allOpps = allOpps.concat(opps);

@@ -23,7 +23,9 @@ export async function GET() {
   }
 
   try {
-    const raw = await fetchAllOpportunitiesRaw(agencyKey, LOCATION_ID, PIPELINE_ID);
+    // strict: a rejected/expired key must surface as an error here, not as an
+    // empty pipeline that looks like "no leads yet".
+    const raw = await fetchAllOpportunitiesRaw(agencyKey, LOCATION_ID, PIPELINE_ID, { strict: true });
     // GHL returns pipelineStageId, not stageId — normalize for the frontend
     const opportunities = raw.map((o: any) => ({
       id: o.id,
@@ -39,7 +41,11 @@ export async function GET() {
     }));
     return NextResponse.json({ opportunities, adSpend });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    // 502 = the upstream (GHL) call failed, as opposed to 400 (not configured)
+    // or 500 (a bug in this app) — keeps the three apart in the request logs.
+    const msg = String(e?.message ?? e);
+    const friendly = msg.startsWith('GHL returned') ? msg : `Couldn't reach GoHighLevel: ${msg}`;
+    return NextResponse.json({ error: friendly }, { status: 502 });
   }
 }
 

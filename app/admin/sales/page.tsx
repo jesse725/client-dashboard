@@ -933,6 +933,9 @@ export default function SalesPage() {
   const [roiData, setRoiData] = useState<RoiData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  // Anything that failed to load, in plain words — without this a failed call
+  // just left the page empty, indistinguishable from "no leads yet".
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [view, setView] = useState<'funnel' | 'kanban' | 'table' | 'weekly' | 'adhealth'>('funnel');
   const [dispositions, setDispositions] = useState<Record<string, Disposition>>({});
 
@@ -950,31 +953,59 @@ export default function SalesPage() {
   const loadData = useCallback(async () => {
     if (status !== 'authenticated') return;
     setSyncing(true);
-    const [pipelineRes, dispRes, metaRes, roiRes] = await Promise.all([
-      fetch('/api/admin/sales-pipeline'),
-      fetch('/api/admin/lead-dispositions'),
-      fetch('/api/admin/sales-meta-ads'),
-      fetch('/api/admin/sales-roi'),
-    ]);
-    if (pipelineRes.ok) {
-      const data = await pipelineRes.json();
-      setOpps(data.opportunities ?? []);
-      setManualAdSpend(data.adSpend ?? 0);
-      setAdSpendInput(String(data.adSpend ?? ''));
+    const errors: string[] = [];
+
+    // A non-OK response body is normally { error: "..." } — pull that out so the
+    // banner says what actually went wrong, falling back to the bare status.
+    const failureReason = async (res: Response) => {
+      try { const j = await res.json(); if (j?.error) return String(j.error); } catch { /* not JSON */ }
+      return `the server returned ${res.status}`;
+    };
+
+    try {
+      const [pipelineRes, dispRes, metaRes, roiRes] = await Promise.all([
+        fetch('/api/admin/sales-pipeline'),
+        fetch('/api/admin/lead-dispositions'),
+        fetch('/api/admin/sales-meta-ads'),
+        fetch('/api/admin/sales-roi'),
+      ]);
+      if (pipelineRes.ok) {
+        const data = await pipelineRes.json();
+        setOpps(data.opportunities ?? []);
+        setManualAdSpend(data.adSpend ?? 0);
+        setAdSpendInput(String(data.adSpend ?? ''));
+      } else {
+        errors.push(`Leads & pipeline: ${await failureReason(pipelineRes)}`);
+      }
+      if (dispRes.ok) {
+        const rows: { opp_id: string; showed: 0 | 1 | null; qualified: 0 | 1 | null }[] = await dispRes.json();
+        setDispositions(Object.fromEntries(rows.map(r => [r.opp_id, { showed: r.showed, qualified: r.qualified }])));
+      } else {
+        errors.push(`Show/qualified tracking: ${await failureReason(dispRes)}`);
+      }
+      if (metaRes.ok) {
+        const data = await metaRes.json();
+        setMetaLifetimeSpend(data.connected && !data.error ? (data.lifetime?.spend ?? 0) : null);
+        // The Meta route answers 200 even when Meta itself rejected the token,
+        // so a connected-but-erroring account has to be caught here.
+        if (data.connected && data.error) errors.push(`Meta ads: ${data.error}`);
+      } else {
+        errors.push(`Meta ads: ${await failureReason(metaRes)}`);
+      }
+      if (roiRes.ok) {
+        setRoiData(await roiRes.json());
+      } else {
+        errors.push(`ROI: ${await failureReason(roiRes)}`);
+      }
+    } catch (e: any) {
+      // Network failure / bad JSON — previously this threw out of loadData and
+      // left the page stuck on "Loading sales pipeline…" forever.
+      errors.push(`Couldn't reach the server: ${e?.message ?? e}`);
+    } finally {
+      setLoadErrors(errors);
+      setLoading(false);
+      setSyncing(false);
     }
-    if (dispRes.ok) {
-      const rows: { opp_id: string; showed: 0 | 1 | null; qualified: 0 | 1 | null }[] = await dispRes.json();
-      setDispositions(Object.fromEntries(rows.map(r => [r.opp_id, { showed: r.showed, qualified: r.qualified }])));
-    }
-    if (metaRes.ok) {
-      const data = await metaRes.json();
-      setMetaLifetimeSpend(data.connected && !data.error ? (data.lifetime?.spend ?? 0) : null);
-    }
-    if (roiRes.ok) {
-      setRoiData(await roiRes.json());
-    }
-    setLoading(false);
-    setSyncing(false);
   }, [status]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -1093,6 +1124,21 @@ export default function SalesPage() {
       </nav>
 
       <div className="px-6 py-6">
+        {loadErrors.length > 0 && (
+          <div className="card p-4 mb-5 flex items-start gap-3" style={{ borderColor: 'var(--red)' }}>
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--red)' }} />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: 'var(--red)' }}>Some Sales Tracker data didn't load</p>
+              <ul className="text-xs mt-1.5 space-y-1" style={{ color: 'var(--text-muted)' }}>
+                {loadErrors.map((m, i) => <li key={i}>{m}</li>)}
+              </ul>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                Numbers below are missing or incomplete until this is fixed — an empty funnel here does not mean zero leads.{' '}
+                <Link href="/admin" className="underline" style={{ color: 'var(--accent)' }}>Open Admin Settings →</Link>
+              </p>
+            </div>
+          </div>
+        )}
         {view === 'funnel'   && <FunnelView opps={opps} adSpend={adSpend} adSpendSource={adSpendSource} roiData={roiData} />}
         {view === 'weekly'   && <WeeklyView opps={opps} dispositions={dispositions} />}
         {view === 'adhealth' && <AdHealthView closedDeals={wonOpps.length} />}
