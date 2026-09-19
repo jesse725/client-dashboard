@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { fetchGHLPipelineStats, resolveApiKey } from '@/lib/ghl';
-import { fetchMetaAdStats } from '@/lib/meta';
+import { fetchMetaAdStats, metaErrorMessage } from '@/lib/meta';
 import { calcMetrics } from '@/lib/metrics';
 import { Client, Quote } from '@/types';
 
@@ -28,8 +28,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
         unqualified: client.stage_unqualified ?? undefined,
         phone: client.stage_phone ?? undefined,
         inhome: client.stage_inhome ?? undefined,
-      });
-    } catch { /* zeros */ }
+      }, { strict: true });
+    } catch (e: any) {
+      // Public page, so no error detail for the visitor — but show the last
+      // saved counts rather than zeros (a failed pull isn't "no leads"), and
+      // leave a trail in the server log.
+      pipeline = { ...pipeline, leads: client.cached_leads ?? 0, inhome: client.cached_inhome ?? 0 };
+      console.error(`[ghl] ${client.name} (client #${client.id}) share link: ${e?.message ?? e}`);
+    }
   }
 
   // Meta Ads
@@ -37,7 +43,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   if (client.meta_access_token && client.meta_ad_account_id) {
     try {
       metaStats = await fetchMetaAdStats(client.meta_access_token, client.meta_ad_account_id);
-    } catch { /* null */ }
+    } catch (e) {
+      console.error(`[meta] ${client.name} (client #${client.id}) share link: ${metaErrorMessage(e)}`);
+    }
   }
 
   const metrics = calcMetrics(client, quotes, pipeline, metaStats?.spend);

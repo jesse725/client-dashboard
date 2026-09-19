@@ -1,6 +1,6 @@
 import { getDb } from './db';
 import { fetchGHLOpportunitiesRaw, resolveApiKey } from './ghl';
-import { fetchMetaAdLevelStats } from './meta';
+import { fetchMetaAdLevelStats, metaErrorMessage } from './meta';
 import { Client } from '@/types';
 
 export interface AdPerformanceRow {
@@ -18,6 +18,7 @@ export interface ClientAdPerformance {
   ads: AdPerformanceRow[];
   bestCpl: number | null; // lowest CPL among ads that have at least one lead
   lastLeadAt: string | null; // most recent lead across the WHOLE pipeline (not just ad-attributed)
+  metaError: string | null; // Meta credentials are saved but the ad-level call failed — why
 }
 
 // Single source of truth for per-ad CPL + last-lead tracking — used by both
@@ -29,7 +30,9 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   let opps: { id: string; createdAt: string; attributions?: { utmAdId?: string }[] }[] = [];
   if (client.ghl_location_id && client.ghl_pipeline_id) {
     const apiKey = resolveApiKey(client.ghl_api_key, agencyGhlKey);
-    opps = await fetchGHLOpportunitiesRaw(apiKey, client.ghl_location_id, client.ghl_pipeline_id);
+    // No key at all would just be a guaranteed 401 — the reason for that is
+    // reported by getLiveClientStats, so skip the doomed request here.
+    if (apiKey) opps = await fetchGHLOpportunitiesRaw(apiKey, client.ghl_location_id, client.ghl_pipeline_id);
   }
 
   // Last lead across the whole pipeline, regardless of ad attribution or Meta connection.
@@ -39,10 +42,19 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   }
 
   if (!client.meta_access_token || !client.meta_ad_account_id) {
-    return { ads: [], bestCpl: null, lastLeadAt };
+    return { ads: [], bestCpl: null, lastLeadAt, metaError: null };
   }
 
-  const adStats = await fetchMetaAdLevelStats(client.meta_access_token, client.meta_ad_account_id, since, until);
+  // lastLeadAt above comes purely from GHL, so a Meta failure must not take it
+  // down with it — this used to throw out of the whole function, which blanked
+  // the "Last Lead" column (and turned it red, reading as "no leads") every time
+  // a Meta token expired. Best CPL is the only thing that genuinely needs Meta.
+  let adStats: Awaited<ReturnType<typeof fetchMetaAdLevelStats>>;
+  try {
+    adStats = await fetchMetaAdLevelStats(client.meta_access_token, client.meta_ad_account_id, since, until);
+  } catch (e) {
+    return { ads: [], bestCpl: null, lastLeadAt, metaError: metaErrorMessage(e) };
+  }
 
   const leadsByAdId = new Map<string, number>();
   const lastLeadByAdId = new Map<string, string>();
@@ -84,5 +96,5 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   const cplValues = ads.map(a => a.cpl).filter((v): v is number => v != null);
   const bestCpl = cplValues.length > 0 ? Math.min(...cplValues) : null;
 
-  return { ads, bestCpl, lastLeadAt };
+  return { ads, bestCpl, lastLeadAt, metaError: null };
 }

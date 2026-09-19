@@ -198,9 +198,13 @@ export async function fetchGHLPipelineStats(
   apiKey: string,
   locationId: string,
   pipelineId: string,
-  stageIds: { leads?: string; contacted?: string; unqualified?: string; phone?: string; inhome?: string }
+  stageIds: { leads?: string; contacted?: string; unqualified?: string; phone?: string; inhome?: string },
+  // strict: throw on a failed GHL call instead of returning zeros — callers
+  // that persist the result (the cached lead counts) need to tell "0 leads"
+  // apart from "GHL refused us" or they overwrite good data with nothing.
+  opts: { strict?: boolean } = {}
 ): Promise<PipelineStats> {
-  const allOpps: GHLOpportunity[] = await fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId);
+  const allOpps: GHLOpportunity[] = await fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId, opts);
 
   const count = (stageId?: string) =>
     stageId ? allOpps.filter((o) => o.pipelineStageId === stageId).length : 0;

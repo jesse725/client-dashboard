@@ -36,6 +36,12 @@ interface ClientRow {
   latest_sentiment: string | null;
   total_ad_spend: number;
   meta_connected: boolean;
+  // Where total_ad_spend came from ('meta' is live; the others are stand-ins)
+  // and, if Meta credentials are saved but the call failed, why.
+  spend_source?: 'meta' | 'manual' | 'estimate';
+  has_meta_credentials?: boolean;
+  meta_error?: string | null;
+  ghl_error?: string | null;
   best_ad_cpl: number | null;
   last_lead_at: string | null;
   contact_pct: number | null;
@@ -129,6 +135,71 @@ function autoStage(c: ClientRow): string {
   return 'Month 3+';
 }
 
+// ── Meta sync status ──────────────────────────────────────────────────────────
+// Ad spend used to render identically whether it was live from Meta, a manual
+// entry, or a daily-budget estimate — only a tiny green dot marked the live
+// ones, and a failing Meta connection just quietly dropped to an estimate. This
+// makes the source explicit and puts the real failure reason on hover.
+function SpendIndicator({ c }: { c: ClientRow }) {
+  if (c.meta_error) {
+    return (
+      <span className="ml-1.5 inline-flex items-center gap-0.5 text-xs font-medium" style={{ color: 'var(--red)' }}
+        title={`Meta is NOT syncing for this client — ${c.meta_error}\n\nThe spend shown is a ${c.spend_source === 'manual' ? 'manual entry' : 'daily-budget estimate'}, not live data.`}>
+        <AlertTriangle size={11} /> not syncing
+      </span>
+    );
+  }
+  if (c.spend_source === 'meta') {
+    return <span className="ml-1 text-xs" style={{ color: 'var(--green)' }} title="Live from Meta">●</span>;
+  }
+  if (c.spend_source === 'manual') {
+    return <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--text-muted)' }} title="A manually entered total — not synced from Meta">manual</span>;
+  }
+  if (c.spend_source === 'estimate') {
+    return <span className="ml-1.5 text-xs font-normal" style={{ color: 'var(--text-muted)' }} title="Estimated from daily budget × days as a client — not synced from Meta">est.</span>;
+  }
+  return null;
+}
+
+// Groups clients by failure reason so 9 expired tokens read as one line, not nine.
+function SyncIssuesBanner({ clients, loadError, ghlError }: { clients: ClientRow[]; loadError: string | null; ghlError: string | null }) {
+  const byReason = new Map<string, string[]>();
+  const ghlByReason = new Map<string, string[]>();
+  for (const c of clients) {
+    if (c.client_status === 'Churned') continue;
+    if (c.meta_error) byReason.set(c.meta_error, [...(byReason.get(c.meta_error) ?? []), c.name]);
+    if (c.ghl_error) ghlByReason.set(c.ghl_error, [...(ghlByReason.get(c.ghl_error) ?? []), c.name]);
+  }
+  if (!loadError && !ghlError && byReason.size === 0 && ghlByReason.size === 0) return null;
+
+  return (
+    <div className="card p-4 mb-5 flex items-start gap-3" style={{ borderColor: 'var(--red)' }}>
+      <AlertTriangle size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--red)' }} />
+      <div className="min-w-0 space-y-2">
+        <p className="text-sm font-semibold" style={{ color: 'var(--red)' }}>Some client data isn't syncing</p>
+        <ul className="text-xs space-y-1.5" style={{ color: 'var(--text-muted)' }}>
+          {loadError && <li><strong style={{ color: 'var(--text)' }}>Client list:</strong> {loadError}</li>}
+          {ghlError && <li><strong style={{ color: 'var(--text)' }}>GoHighLevel:</strong> {ghlError} Journey stages fall back to time-based guesses until it's fixed.</li>}
+          {[...byReason.entries()].map(([reason, names]) => (
+            <li key={`meta-${reason}`}>
+              <strong style={{ color: 'var(--text)' }}>Meta — {names.length} client{names.length === 1 ? '' : 's'}</strong> ({names.join(', ')}): {reason}
+            </li>
+          ))}
+          {[...ghlByReason.entries()].map(([reason, names]) => (
+            <li key={`ghl-${reason}`}>
+              <strong style={{ color: 'var(--text)' }}>GoHighLevel leads — {names.length} client{names.length === 1 ? '' : 's'}</strong> ({names.join(', ')}): {reason} Lead counts shown are the last saved numbers, and Last Lead is unknown.
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Until fixed, affected ad spend is a manual entry or an estimate — not live data — and Best Ad CPL is blank. Fix Meta per client under Edit Client; GoHighLevel keys in{' '}
+          <Link href="/admin" className="underline" style={{ color: 'var(--accent)' }}>Admin Settings</Link>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Kanban Card ───────────────────────────────────────────────────────────────
 function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
   c: ClientRow; onUpdate: (id: number, patch: Partial<ClientRow>) => void;
@@ -186,7 +257,14 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
           <p className="font-bold" style={{ color: 'var(--accent)' }}>{fmtRetainer(c.retainer_price)}</p>
         </div>
         <div className="rounded p-2" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <p style={{ color: 'var(--text-muted)' }}>CPL</p>
+          <p className="flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+            CPL
+            {c.meta_error && (
+              <span title={`Meta is NOT syncing for this client — ${c.meta_error}\n\nThis CPL uses a ${c.spend_source === 'manual' ? 'manual' : 'estimated'} spend figure, not live data.`}>
+                <AlertTriangle size={10} style={{ color: 'var(--red)' }} />
+              </span>
+            )}
+          </p>
           <p className="font-bold" style={{ color: cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 150 ? 'var(--red)' : cpl > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
             {cpl > 0 ? `$${Math.round(cpl)}` : '—'}
           </p>
@@ -194,7 +272,14 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
       </div>
 
       <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
-        <span>{c.cached_leads > 0 ? `${c.cached_leads} leads` : '— leads'}</span>
+        <span className="flex items-center gap-1">
+          {c.cached_leads > 0 ? `${c.cached_leads} leads` : '— leads'}
+          {c.ghl_error && (
+            <span title={`GoHighLevel isn't syncing for this client — showing the last saved count, which may be out of date. ${c.ghl_error}`}>
+              <AlertTriangle size={10} style={{ color: 'var(--red)' }} />
+            </span>
+          )}
+        </span>
         <span>·</span>
         <span>{c.closed_deals} closed</span>
         <span>·</span>
@@ -226,13 +311,22 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
         {[
           { label: 'Active Clients',   value: String(active.length),                                          color: 'var(--accent)' },
           { label: 'MRR',              value: sumRetainer(active), color: 'var(--green)' },
-          { label: 'Total Ad Spend',   value: fmt$(active.reduce((s, c) => s + (c.total_ad_spend || 0), 0)), color: 'var(--yellow)' },
+          {
+            label: 'Total Ad Spend', value: fmt$(active.reduce((s, c) => s + (c.total_ad_spend || 0), 0)), color: 'var(--yellow)',
+            // The total silently mixes live Meta figures with manual entries and
+            // estimates — say how much of it is actually live.
+            sub: active.some(c => c.spend_source) ? `${active.filter(c => c.spend_source === 'meta').length} of ${active.length} live from Meta` : undefined,
+            subWarn: active.some(c => c.meta_error),
+          },
           { label: 'Total Leads',      value: String(active.reduce((s, c) => s + c.cached_leads, 0)),        color: 'var(--yellow)' },
           { label: 'Jobs Closed',      value: String(active.reduce((s, c) => s + c.closed_deals, 0)),        color: 'var(--green)' },
           { label: 'At Risk',          value: String(clients.filter(c => c.client_status === 'At Risk').length), color: '#f59e0b' },
         ].map(s => (
-          <div key={s.label} className="card px-4 py-3 flex items-center justify-between">
-            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.label}</span>
+          <div key={s.label} className="card px-4 py-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-xs block" style={{ color: 'var(--text-muted)' }}>{s.label}</span>
+              {s.sub && <span className="text-[10px] block mt-0.5" style={{ color: s.subWarn ? 'var(--red)' : 'var(--text-muted)' }}>{s.sub}</span>}
+            </div>
             <span className="font-bold text-lg" style={{ color: s.color }}>{s.value}</span>
           </div>
         ))}
@@ -285,7 +379,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--accent)' }}>{fmtRetainer(c.retainer_price)}</td>
                     <td className="px-4 py-3 font-semibold" style={{ color: 'var(--yellow)' }}>
                       {totalAdSpend > 0 ? fmt$(totalAdSpend) : '—'}
-                      {c.meta_connected && <span className="ml-1 text-xs" style={{ color: 'var(--green)' }} title="Live from Meta">●</span>}
+                      <SpendIndicator c={c} />
                     </td>
                     <td className="px-4 py-3 font-semibold" style={{ color: cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 150 ? 'var(--red)' : cpl > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {cpl > 0 ? `$${Math.round(cpl)}` : '—'}
@@ -294,14 +388,22 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                       {c.best_ad_cpl != null ? `$${Math.round(c.best_ad_cpl)}` : '—'}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap" style={{
-                      color: !c.last_lead_at ? 'var(--red)'
+                      color: c.ghl_error ? 'var(--text-muted)'
+                        : !c.last_lead_at ? 'var(--red)'
                         : Math.floor((Date.now() - new Date(c.last_lead_at).getTime()) / 86400000) <= 3 ? 'var(--green)'
                         : Math.floor((Date.now() - new Date(c.last_lead_at).getTime()) / 86400000) <= 7 ? 'var(--yellow)'
                         : 'var(--red)',
                     }}>
-                      {fmtLastLead(c.last_lead_at)}
+                      {c.ghl_error ? <span title={`Unknown — GoHighLevel isn't syncing for this client. ${c.ghl_error}`}>Unknown</span> : fmtLastLead(c.last_lead_at)}
                     </td>
-                    <td className="px-4 py-3 text-center">{c.cached_leads > 0 ? c.cached_leads : '—'}</td>
+                    <td className="px-4 py-3 text-center">
+                      {c.cached_leads > 0 ? c.cached_leads : '—'}
+                      {c.ghl_error && (
+                        <span title={`GoHighLevel isn't syncing for this client — showing the last saved count, which may be out of date. ${c.ghl_error}`}>
+                          <AlertTriangle size={11} className="inline ml-1" style={{ color: 'var(--red)' }} />
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-center font-semibold" style={{ color: c.contact_pct == null ? 'var(--text-muted)' : c.contact_pct >= 60 ? 'var(--green)' : c.contact_pct >= 30 ? 'var(--yellow)' : 'var(--red)' }}>
                       {c.contact_pct != null ? `${Math.round(c.contact_pct)}%` : '—'}
                     </td>
@@ -535,6 +637,10 @@ export default function TrackerPage() {
   const [view, setView] = useState<'overview' | 'kanban' | 'months' | 'internal'>('overview');
   const [ghlOpps, setGhlOpps] = useState<any[]>([]);
   const [syncing, setSyncing] = useState(false);
+  // Why the page might be missing data — previously a failed load just rendered
+  // an empty tracker, and a not-configured GHL key quietly changed a button label.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [ghlError, setGhlError] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated' || (session && user?.role !== 'admin')) router.push('/login');
@@ -542,17 +648,30 @@ export default function TrackerPage() {
 
   const loadData = useCallback(async () => {
     if (status !== 'authenticated') return;
-    const [overviewRes, ghlRes] = await Promise.all([
-      fetch('/api/admin/overview'),
-      fetch('/api/admin/agency-pipeline'),
-    ]);
-    const data = await overviewRes.json();
-    setClients(Array.isArray(data) ? data : []);
-    if (ghlRes.ok) {
-      const ghl = await ghlRes.json();
-      if (ghl.configured && ghl.opportunities) setGhlOpps(ghl.opportunities);
+    try {
+      const [overviewRes, ghlRes] = await Promise.all([
+        fetch('/api/admin/overview'),
+        fetch('/api/admin/agency-pipeline'),
+      ]);
+      const data = await overviewRes.json().catch(() => null);
+      if (Array.isArray(data)) {
+        setClients(data);
+        setLoadError(null);
+      } else {
+        setLoadError(data?.error ? String(data.error) : `the server returned ${overviewRes.status}`);
+      }
+      if (ghlRes.ok) {
+        const ghl = await ghlRes.json();
+        if (ghl.configured && ghl.opportunities) setGhlOpps(ghl.opportunities);
+        // configured:false + error means the agency key isn't set (a merely
+        // unset location/pipeline comes back without `error` and isn't a fault).
+        setGhlError(!ghl.configured && ghl.error ? String(ghl.error) : null);
+      }
+    } catch (e: any) {
+      setLoadError(`couldn't reach the server (${e?.message ?? e})`);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [status]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -644,6 +763,8 @@ export default function TrackerPage() {
       </nav>
 
       <div className="px-6 py-6">
+        <SyncIssuesBanner clients={clients} loadError={loadError} ghlError={ghlError} />
+
         {view === 'overview' && <OverviewTable clients={clients} onSelect={setSelectedClient} />}
 
         {view === 'months' && <MonthView clients={clients} onSelect={setSelectedClient} />}

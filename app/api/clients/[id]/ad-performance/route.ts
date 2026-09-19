@@ -26,8 +26,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const agencyKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
     const perf = await getClientAdPerformance(client, agencyKey);
-    return NextResponse.json({ ads: perf.ads });
+    // A Meta failure no longer throws out of getClientAdPerformance (so the
+    // GHL-derived last-lead date survives it); report it here instead — to
+    // admins only, since it's agency-side detail a client shouldn't see.
+    if (perf.metaError) console.error(`[meta] ${client.name} (client #${client.id}) ad-level: ${perf.metaError}`);
+    return NextResponse.json({ ads: perf.ads, ...(perf.metaError && user.role === 'admin' ? { error: perf.metaError } : {}) });
   } catch (e: any) {
-    return NextResponse.json({ ads: [], error: e.message }, { status: 200 });
+    return NextResponse.json({ ads: [], ...(user.role === 'admin' ? { error: e.message } : {}) }, { status: 200 });
   }
 }

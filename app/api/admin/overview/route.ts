@@ -41,7 +41,20 @@ export async function GET() {
   // this is the same priority logic the individual client dashboard uses.
   const agencyGhlKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
   const enriched = await Promise.all(clients.map(async (c) => {
-    let row = { ...c, total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client), meta_connected: false, best_ad_cpl: null as number | null, last_lead_at: null as string | null, contact_pct: null as number | null, appointments: 0 };
+    let row = {
+      ...c,
+      total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client),
+      // Where the figure above came from + whether Meta is actually syncing. The
+      // fallback (manual/estimate) is shown for any failure, so without these the
+      // UI can't tell a live number from a stand-in — see lib/clientStats.ts.
+      spend_source: (c.ad_spend > 0 ? 'manual' : 'estimate') as 'meta' | 'manual' | 'estimate',
+      has_meta_credentials: !!(c.meta_access_token && c.meta_ad_account_id),
+      meta_error: null as string | null,
+      // Set when the GHL pull failed — cached_leads/cached_inhome below are then
+      // the last saved counts, and last_lead_at is unknown rather than "never".
+      ghl_error: null as string | null,
+      meta_connected: false, best_ad_cpl: null as number | null, last_lead_at: null as string | null, contact_pct: null as number | null, appointments: 0,
+    };
     try {
       const live = await getLiveClientStats(c, agencyGhlKey);
       if (live.leads !== c.cached_leads || live.inhome !== c.cached_inhome) {
@@ -49,28 +62,51 @@ export async function GET() {
       }
       // Contact % = (contacted + any appointment) / total leads
       const contactedOrAppt = live.contacted + live.phone + live.inhome;
+      // When the GHL pull failed only the saved lead / in-home totals exist —
+      // contacted and phone are 0 — so a percentage or appointment count built
+      // from them would be wrong rather than merely stale. Leave them blank.
+      const ghlDown = !!live.ghlError;
       row = {
         ...row,
         cached_leads: live.leads, cached_inhome: live.inhome,
         total_ad_spend: live.totalAdSpend, meta_connected: live.metaConnected,
-        contact_pct: live.leads > 0 ? (contactedOrAppt / live.leads) * 100 : null,
+        spend_source: live.spendSource, has_meta_credentials: live.hasMetaCredentials, meta_error: live.metaError, ghl_error: live.ghlError,
+        contact_pct: !ghlDown && live.leads > 0 ? (contactedOrAppt / live.leads) * 100 : null,
         // Appointments = phone + in-home appointments combined
-        appointments: live.phone + live.inhome,
+        appointments: ghlDown ? 0 : live.phone + live.inhome,
       };
-    } catch { /* keep fallback total_ad_spend above */ }
+    } catch (e: any) {
+      // Unexpected (not a Meta/GHL API failure — those are handled inside
+      // getLiveClientStats). Keep the fallback figures above, but say so.
+      console.error(`[overview] live stats failed for ${c.name} (client #${c.id}): ${e?.message ?? e}`);
+    }
 
     try {
       const perf = await getClientAdPerformance(c, agencyGhlKey);
       row.best_ad_cpl = perf.bestCpl;
       row.last_lead_at = perf.lastLeadAt;
-    } catch { /* leave best_ad_cpl/last_lead_at null */ }
+      // Either Meta call may be the one that trips (rate limits hit one and not
+      // the other) — keep whichever reason there is.
+      if (!row.meta_error && perf.metaError) row.meta_error = perf.metaError;
+    } catch (e: any) {
+      console.error(`[overview] ad performance failed for ${c.name} (client #${c.id}): ${e?.message ?? e}`);
+    }
 
     return row;
   }));
 
+  // Never send the raw Meta token / GHL key to the browser — this endpoint
+  // previously returned the whole clients row (c.*), so every client's live
+  // credentials were sitting in the network response for anyone with the tracker
+  // open (including admins who aren't allowed to see financials). The page only
+  // needs to know whether they exist, which has_meta_credentials covers.
+  const withoutSecrets = enriched.map(({ meta_access_token: _m, ghl_api_key: _g, ...rest }: any) => ({
+    ...rest, has_ghl_key: !!_g,
+  }));
+
   const finalRows = showFinancials
-    ? enriched
-    : enriched.map(r => ({ ...r, retainer_price: null, total_payments_received: null }));
+    ? withoutSecrets
+    : withoutSecrets.map(r => ({ ...r, retainer_price: null, total_payments_received: null }));
 
   return NextResponse.json(finalRows);
 }

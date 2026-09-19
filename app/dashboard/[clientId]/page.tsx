@@ -136,6 +136,10 @@ export default function ClientDashboardPage() {
   type AdPerfRow = { adId: string; adName: string; spend: number; leads: number; cpl: number | null; impressions: number; clicks: number; lastLeadAt: string | null };
   const [adPerformance, setAdPerformance] = useState<AdPerfRow[]>([]);
   const [loadingAdPerf, setLoadingAdPerf] = useState(false);
+  // Admin-only: why Meta/GHL data is missing or stale. The API only sends these
+  // to admins — a client viewing their own dashboard never sees agency internals.
+  const [syncIssues, setSyncIssues] = useState<{ meta: string | null; ghl: string | null } | null>(null);
+  const [adPerfError, setAdPerfError] = useState<string | null>(null);
 
   const user = session?.user as any;
   const isAdmin = user?.role === 'admin';
@@ -166,6 +170,7 @@ export default function ClientDashboardPage() {
       const data = await res.json();
       setPipeline(data.pipeline ?? data);
       if (data.metaStats) setMetaStats(data.metaStats);
+      setSyncIssues(data.syncIssues ?? null);
       setLastSynced(new Date());
     }
     setSyncing(false);
@@ -177,6 +182,7 @@ export default function ClientDashboardPage() {
     if (res.ok) {
       const data = await res.json();
       setAdPerformance(data.ads ?? []);
+      setAdPerfError(data.error ?? null);
     }
     setLoadingAdPerf(false);
   }, [clientId]);
@@ -278,6 +284,20 @@ export default function ClientDashboardPage() {
       </nav>
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-10">
+
+        {/* Admin-only: why this page might be missing or showing stale Meta/GHL numbers */}
+        {isAdmin && (syncIssues?.meta || syncIssues?.ghl || adPerfError) && (
+          <div className="card p-4 flex items-start gap-3" style={{ borderColor: 'var(--red)' }}>
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" style={{ color: 'var(--red)' }} />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: 'var(--red)' }}>Not everything on this page is syncing (only admins see this)</p>
+              <ul className="text-xs mt-1.5 space-y-1" style={{ color: 'var(--text-muted)' }}>
+                {(syncIssues?.meta || adPerfError) && <li><strong style={{ color: 'var(--text)' }}>Meta:</strong> {syncIssues?.meta || adPerfError} The Meta sections below are hidden or out of date until this is fixed — update the token under Edit Client.</li>}
+                {syncIssues?.ghl && <li><strong style={{ color: 'var(--text)' }}>GoHighLevel:</strong> {syncIssues.ghl}</li>}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {/* ─── Partnership Overview Card (everyone sees this) ──────────── */}
         <section className="card p-6">
@@ -417,7 +437,9 @@ export default function ClientDashboardPage() {
               ) : isAdmin && (
                 <div className="col-span-4 card p-4 flex items-center justify-center text-sm"
                   style={{ color: 'var(--text-muted)', borderStyle: 'dashed' }}>
-                  Connect Meta Ads in Edit → to see live impressions, clicks, CTR & CPC
+                  {syncIssues?.meta
+                    ? 'Meta is connected but not syncing right now — see the notice at the top of this page.'
+                    : 'Connect Meta Ads in Edit → to see live impressions, clicks, CTR & CPC'}
                 </div>
               )}
             </div>
@@ -433,7 +455,7 @@ export default function ClientDashboardPage() {
               <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Loading ad performance…</div>
             ) : adPerformance.length === 0 ? (
               <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                No per-ad spend in this window yet.
+                {isAdmin && adPerfError ? `Couldn't load per-ad data — ${adPerfError}` : 'No per-ad spend in this window yet.'}
               </div>
             ) : (
               <div className="card overflow-hidden">
