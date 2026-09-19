@@ -151,6 +151,10 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
               <Label>Contact Phone</Label>
               <input className="input" value={form.contact_phone} onChange={(e) => set('contact_phone', e.target.value)} />
             </div>
+            <div className="col-span-2">
+              <Label>Business Address <span className="font-normal opacity-70">(puts them on the Client Tracker map)</span></Label>
+              <input className="input" value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Street, City, State ZIP" />
+            </div>
           </div>
 
           {/* ── Billing ── */}

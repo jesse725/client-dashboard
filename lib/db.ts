@@ -216,6 +216,25 @@ function initSchema(db: Database.Database) {
     db.exec('ALTER TABLE clients ADD COLUMN ad_account_url TEXT');
   }
 
+  // Geocoded client addresses for the Client Tracker's area map — one row per
+  // client, kept out of the clients table (which is SELECT *-ed all over). `address`
+  // is the exact text that was looked up, so an edited address is spotted by
+  // comparing it to clients.address; no hook is needed in the several places
+  // (Edit Client, onboarding, the Google Form webhook) that can change it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS client_locations (
+      client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+      address TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('ok','not_found','error')),
+      lat REAL,
+      lng REAL,
+      match TEXT,
+      approximate INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // Issues & Solutions table
   db.exec(`
     CREATE TABLE IF NOT EXISTS issues_solutions (

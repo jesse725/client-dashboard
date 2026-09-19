@@ -155,3 +155,19 @@ export interface DashboardMetrics {
   cac: number;
   roas: number;
 }
+
+// One client on the Client Tracker's area map (see app/api/admin/client-map).
+export type MapStatus = 'ok' | 'pending' | 'no_address' | 'not_found' | 'error';
+
+export interface MapClient {
+  id: number;
+  company: string; // clients.name — the business name
+  contact: string | null; // the person
+  address: string | null;
+  status: MapStatus;
+  lat: number | null;
+  lng: number | null;
+  match: string | null; // what the geocoder says it found, so a wrong match is easy to spot
+  approximate: boolean; // city-level rather than street-level
+  message: string | null; // why it isn't on the map
+}

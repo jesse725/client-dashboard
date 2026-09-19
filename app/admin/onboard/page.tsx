@@ -52,6 +52,13 @@ function OnboardPage() {
     name: '',
     contact_name: '',
     contact_email: '',
+    // Collected by the Google Form and carried over from the pending record below.
+    // They used to be dropped here — the pending record is deleted once this
+    // client is created, so its address vanished with it.
+    contact_phone: '',
+    address: '',
+    ein: '',
+    target_locations: '',
     start_date: new Date().toISOString().slice(0, 10),
     date_launched: '',
     retainer_price: '',
@@ -97,11 +104,15 @@ function OnboardPage() {
       name: data.name ?? f.name,
       contact_name: data.contact_name ?? f.contact_name,
       contact_email: data.contact_email ?? f.contact_email,
+      contact_phone: data.contact_phone ?? '',
+      address: data.address ?? '',
+      ein: data.ein ?? '',
+      target_locations: data.target_locations ?? '',
     }));
   }
 
   function handlePendingSelect(id: string) {
-    if (!id) { setPrefillData(null); setForm(f => ({ ...f, name: '' })); return; }
+    if (!id) { setPrefillData(null); setForm(f => ({ ...f, name: '', contact_phone: '', address: '', ein: '', target_locations: '' })); return; }
     fetch(`/api/clients/${id}`)
       .then(r => r.json())
       .then(data => applyPrefill(data));
@@ -292,7 +303,7 @@ function OnboardPage() {
             <Link href={`/dashboard/${created.id}`} className="btn-primary flex-1 text-center text-sm py-2.5">
               Open Dashboard
             </Link>
-            <button onClick={() => { setCreated(null); setStep(0); setForm(f => ({ ...f, name: '', contact_name: '', contact_email: '', ghl_api_key: '', ghl_location_id: '' })); }} className="btn-ghost flex-1 text-sm">
+            <button onClick={() => { setCreated(null); setStep(0); setForm(f => ({ ...f, name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', ein: '', target_locations: '', ghl_api_key: '', ghl_location_id: '' })); }} className="btn-ghost flex-1 text-sm">
               Onboard Another Client
             </button>
           </div>
@@ -357,6 +368,10 @@ function OnboardPage() {
                 <div>
                   <Label>Contact Email</Label>
                   <input className="input" type="email" value={form.contact_email} onChange={e => set('contact_email', e.target.value)} placeholder="juan@business.com" required />
+                </div>
+                <div className="col-span-2">
+                  <Label optional>Business Address (puts them on the Client Tracker map)</Label>
+                  <input className="input" value={form.address} onChange={e => set('address', e.target.value)} placeholder="Street, City, State ZIP" />
                 </div>
                 <div>
                   <Label>Contract Start Date</Label>

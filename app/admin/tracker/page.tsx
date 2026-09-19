@@ -3,13 +3,21 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   DollarSign, TrendingUp, Users, Star, Phone, AlertTriangle, Target,
   CheckCircle, Clock, XCircle, ChevronRight, Plus, Minus,
   Home, BarChart2, Pause, PhoneCall, X, RefreshCw,
-  Smile, Meh, Frown, Table2, Kanban, Calendar,
+  Smile, Meh, Frown, Table2, Kanban, Calendar, MapPin,
 } from 'lucide-react';
 import CallNotesSection from '@/components/CallNotesSection';
+
+// Leaflet needs `window`, so the map is client-only — and only downloaded when
+// someone actually opens the Map tab.
+const ClientAreaMap = dynamic(() => import('@/components/ClientAreaMap'), {
+  ssr: false,
+  loading: () => <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading map…</p>,
+});
 
 interface ClientRow {
   id: number;
@@ -634,7 +642,7 @@ export default function TrackerPage() {
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<number | null>(null);
   const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
-  const [view, setView] = useState<'overview' | 'kanban' | 'months' | 'internal'>('overview');
+  const [view, setView] = useState<'overview' | 'kanban' | 'map' | 'months' | 'internal'>('overview');
   const [ghlOpps, setGhlOpps] = useState<any[]>([]);
   const [syncing, setSyncing] = useState(false);
   // Why the page might be missing data — previously a failed load just rendered
@@ -745,6 +753,7 @@ export default function TrackerPage() {
             {([
               { key: 'overview',  label: 'Overview',  icon: <Table2 size={13} /> },
               { key: 'kanban',    label: 'Journey',   icon: <Kanban size={13} /> },
+              { key: 'map',       label: 'Map',       icon: <MapPin size={13} /> },
               { key: 'months',    label: 'Months',    icon: <Calendar size={13} /> },
               { key: 'internal',  label: 'Internal',  icon: <DollarSign size={13} /> },
             ] as const).map(v => (
@@ -763,9 +772,12 @@ export default function TrackerPage() {
       </nav>
 
       <div className="px-6 py-6">
-        <SyncIssuesBanner clients={clients} loadError={loadError} ghlError={ghlError} />
+        {/* The sync banner is about Meta/GHL data, none of which the map uses */}
+        {view !== 'map' && <SyncIssuesBanner clients={clients} loadError={loadError} ghlError={ghlError} />}
 
         {view === 'overview' && <OverviewTable clients={clients} onSelect={setSelectedClient} />}
+
+        {view === 'map' && <ClientAreaMap />}
 
         {view === 'months' && <MonthView clients={clients} onSelect={setSelectedClient} />}
 
