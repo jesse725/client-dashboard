@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { getClientAdPerformance } from '@/lib/adPerformance';
 import { Client } from '@/types';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     const agencyKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
-    const perf = await getClientAdPerformance(client, agencyKey);
+    const perf = await getClientAdPerformance(client, agencyKey, { refresh: req.nextUrl.searchParams.get('refresh') === '1' });
     // A Meta failure no longer throws out of getClientAdPerformance (so the
     // GHL-derived last-lead date survives it); report it here instead — to
     // admins only, since it's agency-side detail a client shouldn't see.

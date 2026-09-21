@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { fetchGHLPipelineStats, resolveApiKey } from '@/lib/ghl';
-import { fetchMetaAdStats, metaErrorMessage } from '@/lib/meta';
+import { metaErrorMessage } from '@/lib/meta';
+import { getMetaSpend } from '@/lib/clientStats';
 import { calcMetrics } from '@/lib/metrics';
 import { Client, Quote } from '@/types';
 
@@ -42,7 +43,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   let metaStats = null;
   if (client.meta_access_token && client.meta_ad_account_id) {
     try {
-      metaStats = await fetchMetaAdStats(client.meta_access_token, client.meta_ad_account_id);
+      // Cached, and the same partnership-window figure the client's own dashboard
+      // shows. This page is public, so without the cache every visit (or anyone
+      // reloading a shared link) was a fresh Meta call against the rate limit.
+      metaStats = (await getMetaSpend(client)).value;
     } catch (e) {
       console.error(`[meta] ${client.name} (client #${client.id}) share link: ${metaErrorMessage(e)}`);
     }

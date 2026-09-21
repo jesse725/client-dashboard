@@ -235,6 +235,17 @@ function initSchema(db: Database.Database) {
     );
   `);
 
+  // Last good answer from Meta per (client, question) — see lib/metaCache.ts. Lets
+  // a rate limit or timeout show the previous real figure, marked stale, rather than
+  // the page falling back to an estimate that looks like live data.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS meta_cache (
+      key TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL
+    );
+  `);
+
   // Issues & Solutions table
   db.exec(`
     CREATE TABLE IF NOT EXISTS issues_solutions (

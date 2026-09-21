@@ -1,6 +1,7 @@
 import { getDb } from './db';
 import { fetchGHLPipelineStats, resolveApiKey } from './ghl';
-import { fetchMetaAdStats, metaErrorMessage } from './meta';
+import { cleanMetaToken, fetchMetaAdStats, metaErrorMessage, metaWindow, normalizeAdAccountId, type MetaAdStats } from './meta';
+import { ageLabel, cachedMeta, type Cached } from './metaCache';
 import { Client } from '@/types';
 
 // Where the ad-spend figure actually came from. Only 'meta' is a live number —
@@ -16,15 +17,29 @@ export interface LiveClientStats {
   totalAdSpend: number;
   metaConnected: boolean; // the Meta call succeeded (even if it reported $0)
   hasMetaCredentials: boolean; // a token + ad account are saved for this client
-  metaError: string | null; // credentials saved but the call failed — why
+  metaError: string | null; // credentials saved but the call failed (or only stale data is left) — why
+  metaStale: boolean; // metaError is set but spend is still Meta's last real answer, from metaFetchedAt
+  metaFetchedAt: number | null; // epoch ms of the Meta response the spend came from
+  metaZeroSpend: boolean; // Meta answered fine and says nothing was spent in the window
   ghlError: string | null; // GHL is configured for this client but the pull failed — counts are the last saved ones
   spendSource: SpendSource;
+}
+
+// The one Meta spend figure per client, cached (lib/metaCache.ts). The tracker and
+// the client's own dashboard both read it here, so the two can't show different
+// numbers and opening either doesn't cost Meta a fresh call each time.
+export async function getMetaSpend(client: Client, opts: { refresh?: boolean } = {}): Promise<Cached<MetaAdStats>> {
+  const { since, until } = metaWindow(client.start_date);
+  const account = normalizeAdAccountId(client.meta_ad_account_id);
+  return cachedMeta(`stats:${client.id}:${account}:${since}`, opts, () =>
+    fetchMetaAdStats(cleanMetaToken(client.meta_access_token), account, 'maximum', { since, until })
+  );
 }
 
 // Single source of truth for "how much has this client actually spent on ads,
 // and how many leads/in-homes do they have" — used by both the per-client
 // dashboard and the admin Client Tracker overview so the two never disagree.
-export async function getLiveClientStats(client: Client, agencyGhlKey: string): Promise<LiveClientStats> {
+export async function getLiveClientStats(client: Client, agencyGhlKey: string, opts: { refresh?: boolean } = {}): Promise<LiveClientStats> {
   const daysTogether = Math.max(1, Math.floor((Date.now() - new Date(client.start_date).getTime()) / 86400000));
 
   let leads = 0;
@@ -66,17 +81,25 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string): 
 
   let metaSpend: number | null = null;
   let metaError: string | null = null;
+  let metaStale = false;
+  let metaFetchedAt: number | null = null;
   const hasMetaCredentials = !!(client.meta_access_token && client.meta_ad_account_id);
   if (hasMetaCredentials) {
     try {
-      const since = client.start_date;
-      const until = new Date().toISOString().slice(0, 10);
-      const stats = await fetchMetaAdStats(client.meta_access_token!, client.meta_ad_account_id!, 'maximum', { since, until });
-      metaSpend = stats.spend;
+      const got = await getMetaSpend(client, opts);
+      metaSpend = got.value.spend;
+      metaFetchedAt = got.fetchedAt;
+      if (got.stale) {
+        // A refresh failed but there's a real earlier answer: show that, say so,
+        // rather than dropping to a manual/estimated figure that looks live.
+        metaStale = true;
+        metaError = `${got.error} Showing the last figure Meta returned, from ${ageLabel(got.fetchedAt)}.`;
+        console.error(`[meta] ${client.name} (client #${client.id}): ${got.error} — serving the figure from ${ageLabel(got.fetchedAt)}`);
+      }
     } catch (e) {
-      // Falls through to manual/estimate below — but no longer silently: the
-      // reason is returned so the UI can say the number isn't live, and logged
-      // so it shows up in the server logs too.
+      // Falls through to manual/estimate below — but not silently: the reason is
+      // returned so the UI can say the number isn't live, and logged so it shows
+      // up in the server logs too.
       metaError = metaErrorMessage(e);
       console.error(`[meta] ${client.name} (client #${client.id}): ${metaError}`);
     }
@@ -96,5 +119,5 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string): 
     totalAdSpend = (client.daily_ad_spend ?? 0) * daysTogether;
   }
 
-  return { leads, inhome, contacted, phone, totalAdSpend, metaConnected: metaSpend != null, hasMetaCredentials, metaError, ghlError, spendSource };
+  return { leads, inhome, contacted, phone, totalAdSpend, metaConnected: metaSpend != null, hasMetaCredentials, metaError, metaStale, metaFetchedAt, metaZeroSpend: metaSpend === 0, ghlError, spendSource };
 }

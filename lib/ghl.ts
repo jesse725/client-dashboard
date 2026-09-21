@@ -166,7 +166,10 @@ async function fetchAllOpportunitiesRaw(
   let startAfterId: string | undefined;
 
   for (let page = 0; page < HARD_PAGE_CAP; page++) {
-    let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&limit=${limit}`;
+    // status=all: the endpoint documents open/won/lost/abandoned/all with no stated default, and
+    // "leads" here means every opportunity in the pipeline — so ask for all of them rather than
+    // rely on whichever statuses the API happens to return when it isn't told.
+    let url = `${GHL_V2}/opportunities/search?location_id=${locationId}&pipeline_id=${pipelineId}&status=all&limit=${limit}`;
     if (startAfter) url += `&startAfter=${startAfter}&startAfterId=${startAfterId}`;
     const res = await fetch(url, { headers });
     if (!res.ok) {

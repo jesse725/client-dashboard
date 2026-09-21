@@ -5,7 +5,21 @@ import { getDb } from '@/lib/db';
 import { getLiveClientStats } from '@/lib/clientStats';
 import { getClientAdPerformance } from '@/lib/adPerformance';
 
-export async function GET() {
+// Runs `fn` over `items` with at most `limit` in flight. Every client used to hit
+// Meta and GoHighLevel at once, which on a cold cache is the burst that trips rate limits.
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }));
+  return results;
+}
+
+export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   const user = session?.user as any;
   if (!session || user?.role !== 'admin') {
@@ -40,7 +54,10 @@ export async function GET() {
   // for every client in parallel, instead of relying on stale per-client cache —
   // this is the same priority logic the individual client dashboard uses.
   const agencyGhlKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
-  const enriched = await Promise.all(clients.map(async (c) => {
+  // ?refresh=1 (the Sync button) skips the 10-minute Meta cache; a failed refresh
+  // still falls back to the last good figure, marked stale.
+  const refresh = new URL(req.url).searchParams.get('refresh') === '1';
+  const enriched = await mapLimit(clients, 6, async (c) => {
     let row = {
       ...c,
       total_ad_spend: c.ad_spend || (c.daily_ad_spend * c.days_as_client),
@@ -50,13 +67,21 @@ export async function GET() {
       spend_source: (c.ad_spend > 0 ? 'manual' : 'estimate') as 'meta' | 'manual' | 'estimate',
       has_meta_credentials: !!(c.meta_access_token && c.meta_ad_account_id),
       meta_error: null as string | null,
+      // The figure is Meta's last real answer rather than a fresh one (a refresh
+      // failed), and when that answer is from.
+      meta_stale: false,
+      meta_fetched_at: null as number | null,
+      // Meta is answering fine and says $0 was spent since launch — ads paused, a
+      // billing problem, or the wrong ad account. Without this the page quietly
+      // shows the daily-budget estimate instead.
+      meta_zero: false,
       // Set when the GHL pull failed — cached_leads/cached_inhome below are then
       // the last saved counts, and last_lead_at is unknown rather than "never".
       ghl_error: null as string | null,
       meta_connected: false, best_ad_cpl: null as number | null, last_lead_at: null as string | null, contact_pct: null as number | null, appointments: 0,
     };
     try {
-      const live = await getLiveClientStats(c, agencyGhlKey);
+      const live = await getLiveClientStats(c, agencyGhlKey, { refresh });
       if (live.leads !== c.cached_leads || live.inhome !== c.cached_inhome) {
         db.prepare('UPDATE clients SET cached_leads = ?, cached_inhome = ? WHERE id = ?').run(live.leads, live.inhome, c.id);
       }
@@ -71,6 +96,8 @@ export async function GET() {
         cached_leads: live.leads, cached_inhome: live.inhome,
         total_ad_spend: live.totalAdSpend, meta_connected: live.metaConnected,
         spend_source: live.spendSource, has_meta_credentials: live.hasMetaCredentials, meta_error: live.metaError, ghl_error: live.ghlError,
+        meta_stale: live.metaStale, meta_fetched_at: live.metaFetchedAt,
+        meta_zero: live.metaZeroSpend && !!c.date_launched && c.date_launched <= new Date().toISOString().slice(0, 10),
         contact_pct: !ghlDown && live.leads > 0 ? (contactedOrAppt / live.leads) * 100 : null,
         // Appointments = phone + in-home appointments combined
         appointments: ghlDown ? 0 : live.phone + live.inhome,
@@ -82,7 +109,7 @@ export async function GET() {
     }
 
     try {
-      const perf = await getClientAdPerformance(c, agencyGhlKey);
+      const perf = await getClientAdPerformance(c, agencyGhlKey, { refresh });
       row.best_ad_cpl = perf.bestCpl;
       row.last_lead_at = perf.lastLeadAt;
       // Either Meta call may be the one that trips (rate limits hit one and not
@@ -93,7 +120,7 @@ export async function GET() {
     }
 
     return row;
-  }));
+  });
 
   // Never send the raw Meta token / GHL key to the browser — this endpoint
   // previously returned the whole clients row (c.*), so every client's live

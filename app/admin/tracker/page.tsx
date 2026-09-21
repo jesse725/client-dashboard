@@ -8,9 +8,10 @@ import {
   DollarSign, TrendingUp, Users, Star, Phone, AlertTriangle, Target,
   CheckCircle, Clock, XCircle, ChevronRight, Plus, Minus,
   Home, BarChart2, Pause, PhoneCall, X, RefreshCw,
-  Smile, Meh, Frown, Table2, Kanban, Calendar, MapPin,
+  Smile, Meh, Frown, Table2, Kanban, Calendar, MapPin, Activity,
 } from 'lucide-react';
 import CallNotesSection from '@/components/CallNotesSection';
+import MetaHealthView from '@/components/MetaHealthView';
 
 // Leaflet needs `window`, so the map is client-only — and only downloaded when
 // someone actually opens the Map tab.
@@ -49,6 +50,9 @@ interface ClientRow {
   spend_source?: 'meta' | 'manual' | 'estimate';
   has_meta_credentials?: boolean;
   meta_error?: string | null;
+  meta_stale?: boolean; // spend is Meta's last real answer, not a fresh one (a refresh failed)
+  meta_fetched_at?: number | null;
+  meta_zero?: boolean; // Meta is answering and says $0 has been spent since launch
   ghl_error?: string | null;
   best_ad_cpl: number | null;
   last_lead_at: string | null;
@@ -149,11 +153,30 @@ function autoStage(c: ClientRow): string {
 // ones, and a failing Meta connection just quietly dropped to an estimate. This
 // makes the source explicit and puts the real failure reason on hover.
 function SpendIndicator({ c }: { c: ClientRow }) {
+  // Meta refused the latest refresh but the figure is still Meta's own last answer.
+  if (c.meta_stale && c.meta_error) {
+    return (
+      <span className="ml-1.5 inline-flex items-center gap-0.5 text-xs font-medium" style={{ color: 'var(--yellow)' }}
+        title={`${c.meta_error}\n\nThis is Meta's last real figure, not a fresh one.`}>
+        <AlertTriangle size={11} /> stale
+      </span>
+    );
+  }
   if (c.meta_error) {
     return (
       <span className="ml-1.5 inline-flex items-center gap-0.5 text-xs font-medium" style={{ color: 'var(--red)' }}
         title={`Meta is NOT syncing for this client — ${c.meta_error}\n\nThe spend shown is a ${c.spend_source === 'manual' ? 'manual entry' : 'daily-budget estimate'}, not live data.`}>
         <AlertTriangle size={11} /> not syncing
+      </span>
+    );
+  }
+  // Meta is connected and answering, and says nothing was spent since launch — so
+  // the figure shown is the manual/estimated one, not Meta's.
+  if (c.meta_zero) {
+    return (
+      <span className="ml-1.5 inline-flex items-center gap-0.5 text-xs font-medium" style={{ color: 'var(--yellow)' }}
+        title={`Meta is connected and reports $0 spent since this client launched. The ads may be paused, there may be a billing problem, or this may be the wrong ad account. The figure shown is a ${c.spend_source === 'manual' ? 'manual entry' : 'daily-budget estimate'}, not Meta's.`}>
+        <AlertTriangle size={11} /> Meta: $0
       </span>
     );
   }
@@ -171,14 +194,22 @@ function SpendIndicator({ c }: { c: ClientRow }) {
 
 // Groups clients by failure reason so 9 expired tokens read as one line, not nine.
 function SyncIssuesBanner({ clients, loadError, ghlError }: { clients: ClientRow[]; loadError: string | null; ghlError: string | null }) {
-  const byReason = new Map<string, string[]>();
+  const byReason = new Map<string, { names: string[]; stale: boolean }>();
   const ghlByReason = new Map<string, string[]>();
+  const zeroSpend: string[] = [];
   for (const c of clients) {
     if (c.client_status === 'Churned') continue;
-    if (c.meta_error) byReason.set(c.meta_error, [...(byReason.get(c.meta_error) ?? []), c.name]);
+    if (c.meta_error) {
+      // "…Showing the last figure Meta returned, from 3 minutes ago." differs per client and would
+      // split one shared reason into several lines — group on the reason alone.
+      const reason = c.meta_error.replace(/ Showing (the last figure Meta returned, from|per-ad figures from) .*$/, '');
+      const prev = byReason.get(reason);
+      byReason.set(reason, { names: [...(prev?.names ?? []), c.name], stale: (prev?.stale ?? true) && !!c.meta_stale });
+    }
     if (c.ghl_error) ghlByReason.set(c.ghl_error, [...(ghlByReason.get(c.ghl_error) ?? []), c.name]);
+    if (c.meta_zero && !c.meta_error) zeroSpend.push(c.name);
   }
-  if (!loadError && !ghlError && byReason.size === 0 && ghlByReason.size === 0) return null;
+  if (!loadError && !ghlError && byReason.size === 0 && ghlByReason.size === 0 && zeroSpend.length === 0) return null;
 
   return (
     <div className="card p-4 mb-5 flex items-start gap-3" style={{ borderColor: 'var(--red)' }}>
@@ -188,11 +219,18 @@ function SyncIssuesBanner({ clients, loadError, ghlError }: { clients: ClientRow
         <ul className="text-xs space-y-1.5" style={{ color: 'var(--text-muted)' }}>
           {loadError && <li><strong style={{ color: 'var(--text)' }}>Client list:</strong> {loadError}</li>}
           {ghlError && <li><strong style={{ color: 'var(--text)' }}>GoHighLevel:</strong> {ghlError} Journey stages fall back to time-based guesses until it's fixed.</li>}
-          {[...byReason.entries()].map(([reason, names]) => (
+          {[...byReason.entries()].map(([reason, { names, stale }]) => (
             <li key={`meta-${reason}`}>
               <strong style={{ color: 'var(--text)' }}>Meta — {names.length} client{names.length === 1 ? '' : 's'}</strong> ({names.join(', ')}): {reason}
+              {stale && ' Their figures are the last ones Meta returned, so they may be a little behind.'}
             </li>
           ))}
+          {zeroSpend.length > 0 && (
+            <li>
+              <strong style={{ color: 'var(--text)' }}>Meta reports $0 spent — {zeroSpend.length} client{zeroSpend.length === 1 ? '' : 's'}</strong> ({zeroSpend.join(', ')}):
+              the ads may be paused, there may be a billing problem, or it may be the wrong ad account. The spend shown for them is an estimate, not Meta's.
+            </li>
+          )}
           {[...ghlByReason.entries()].map(([reason, names]) => (
             <li key={`ghl-${reason}`}>
               <strong style={{ color: 'var(--text)' }}>GoHighLevel leads — {names.length} client{names.length === 1 ? '' : 's'}</strong> ({names.join(', ')}): {reason} Lead counts shown are the last saved numbers, and Last Lead is unknown.
@@ -200,7 +238,7 @@ function SyncIssuesBanner({ clients, loadError, ghlError }: { clients: ClientRow
           ))}
         </ul>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Until fixed, affected ad spend is a manual entry or an estimate — not live data — and Best Ad CPL is blank. Fix Meta per client under Edit Client; GoHighLevel keys in{' '}
+          Until fixed, affected ad spend is a manual entry, an estimate or Meta's last known figure — not live data. The <strong style={{ color: 'var(--text)' }}>Meta Health</strong> tab shows exactly what's wrong with each connection and how to fix it; GoHighLevel keys are in{' '}
           <Link href="/admin" className="underline" style={{ color: 'var(--accent)' }}>Admin Settings</Link>.
         </p>
       </div>
@@ -642,7 +680,7 @@ export default function TrackerPage() {
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<number | null>(null);
   const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
-  const [view, setView] = useState<'overview' | 'kanban' | 'map' | 'months' | 'internal'>('overview');
+  const [view, setView] = useState<'overview' | 'kanban' | 'map' | 'meta' | 'months' | 'internal'>('overview');
   const [ghlOpps, setGhlOpps] = useState<any[]>([]);
   const [syncing, setSyncing] = useState(false);
   // Why the page might be missing data — previously a failed load just rendered
@@ -654,11 +692,12 @@ export default function TrackerPage() {
     if (status === 'unauthenticated' || (session && user?.role !== 'admin')) router.push('/login');
   }, [status, session, router]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (refresh = false) => {
     if (status !== 'authenticated') return;
     try {
       const [overviewRes, ghlRes] = await Promise.all([
-        fetch('/api/admin/overview'),
+        // refresh skips the 10-minute Meta cache (a failed refresh still shows the last good figure)
+        fetch(refresh ? '/api/admin/overview?refresh=1' : '/api/admin/overview'),
         fetch('/api/admin/agency-pipeline'),
       ]);
       const data = await overviewRes.json().catch(() => null);
@@ -717,7 +756,7 @@ export default function TrackerPage() {
 
   async function syncGHL() {
     setSyncing(true);
-    await loadData();
+    await loadData(true);
     setSyncing(false);
   }
 
@@ -754,6 +793,7 @@ export default function TrackerPage() {
               { key: 'overview',  label: 'Overview',  icon: <Table2 size={13} /> },
               { key: 'kanban',    label: 'Journey',   icon: <Kanban size={13} /> },
               { key: 'map',       label: 'Map',       icon: <MapPin size={13} /> },
+              { key: 'meta',      label: 'Meta Health', icon: <Activity size={13} /> },
               { key: 'months',    label: 'Months',    icon: <Calendar size={13} /> },
               { key: 'internal',  label: 'Internal',  icon: <DollarSign size={13} /> },
             ] as const).map(v => (
@@ -772,12 +812,14 @@ export default function TrackerPage() {
       </nav>
 
       <div className="px-6 py-6">
-        {/* The sync banner is about Meta/GHL data, none of which the map uses */}
-        {view !== 'map' && <SyncIssuesBanner clients={clients} loadError={loadError} ghlError={ghlError} />}
+        {/* The sync banner is about Meta/GHL data — the map doesn't use it, and Meta Health goes deeper */}
+        {view !== 'map' && view !== 'meta' && <SyncIssuesBanner clients={clients} loadError={loadError} ghlError={ghlError} />}
 
         {view === 'overview' && <OverviewTable clients={clients} onSelect={setSelectedClient} />}
 
         {view === 'map' && <ClientAreaMap />}
+
+        {view === 'meta' && <MetaHealthView clients={clients} isOwner={!!user?.canViewFinancials} />}
 
         {view === 'months' && <MonthView clients={clients} onSelect={setSelectedClient} />}
 

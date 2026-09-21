@@ -68,6 +68,68 @@ export function metaErrorMessage(e: unknown): string {
   return `Couldn't reach Meta: ${scrub(msg).slice(0, 160)}`;
 }
 
+// ── Inputs ───────────────────────────────────────────────────────────────────
+// Tokens and account IDs are pasted in by hand. A stray space or line break from
+// the copy (or a "Bearer " prefix) is enough for Meta to answer "invalid token",
+// and it looks exactly like an expired one — so clean them where they're used.
+export function cleanMetaToken(raw: string | null | undefined): string {
+  return (raw ?? '').trim().replace(/^bearer\s+/i, '').replace(/^["']+|["']+$/g, '').replace(/\s+/g, '');
+}
+
+// "act_123", "123", " ACT_123 " and "123-456-789" all mean the same account.
+export function normalizeAdAccountId(raw: string | null | undefined): string {
+  const text = (raw ?? '').trim();
+  const digits = text.replace(/^act[_\s-]*/i, '').replace(/\D/g, '');
+  return digits ? `act_${digits}` : text;
+}
+
+export function looksLikeAdAccountId(id: string): boolean {
+  return /^act_\d{5,20}$/.test(id);
+}
+
+// ── Date window ─────────────────────────────────────────────────────────────
+// Meta reports in the ad account's own timezone, so "today" taken from UTC is
+// already tomorrow for a US account in the evening. Los Angeles' date is never
+// ahead of any US account's, so it's the safe upper bound. Insights also only
+// reach back 37 months (an older `since` is an error, not a shorter answer), so
+// a long-standing client's start date is clamped to 36.
+export function metaWindow(startDate: string | null | undefined, now: Date = new Date()): { since: string; until: string; clamped: boolean } {
+  const until = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  let since = /^\d{4}-\d{2}-\d{2}/.test(startDate ?? '') ? (startDate as string).slice(0, 10) : until;
+  const floor = new Date(`${until}T00:00:00Z`);
+  floor.setUTCMonth(floor.getUTCMonth() - 36);
+  const floorStr = floor.toISOString().slice(0, 10);
+  let clamped = false;
+  if (since < floorStr) { since = floorStr; clamped = true; }
+  if (since > until) since = until; // a start date still in the future
+  return { since, until, clamped };
+}
+
+// ── Requests ────────────────────────────────────────────────────────────────
+// Nothing here used to time out, so one hung Meta call would hang the whole
+// Client Success load (every client is fetched in parallel).
+const REQUEST_TIMEOUT_MS = 20_000;
+
+async function metaFetch(url: string): Promise<any> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw await metaErrorFrom(res);
+    return await res.json();
+  } catch (e: any) {
+    if (e instanceof MetaApiError) throw e;
+    if (e?.name === 'AbortError') throw new Error(`Meta didn't answer within ${REQUEST_TIMEOUT_MS / 1000} seconds`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function metaUrl(path: string, token: string, params: Record<string, string> = {}): string {
+  return `${META_BASE}/${path}?${new URLSearchParams({ ...params, access_token: cleanMetaToken(token) })}`;
+}
+
 export interface MetaAdStats {
   spend: number;
   impressions: number;
@@ -80,21 +142,15 @@ export interface MetaAdStats {
 
 export async function fetchMetaAdStats(
   accessToken: string,
-  adAccountId: string, // format: act_XXXXXXXXXX
+  adAccountId: string, // act_XXXXXXXXXX, or just the number
   datePreset: string = 'maximum',
   range?: { since: string; until: string } // overrides datePreset when provided (YYYY-MM-DD, inclusive)
 ): Promise<MetaAdStats> {
-  const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
-  const fields = 'spend,impressions,clicks,ctr,cpc,reach,frequency';
-  const dateParam = range
-    ? `time_range=${encodeURIComponent(JSON.stringify(range))}`
-    : `date_preset=${datePreset}`;
-  const url = `${META_BASE}/${account}/insights?fields=${fields}&${dateParam}&access_token=${accessToken}`;
+  const params: Record<string, string> = { fields: 'spend,impressions,clicks,ctr,cpc,reach,frequency' };
+  if (range) params.time_range = JSON.stringify(range);
+  else params.date_preset = datePreset;
 
-  const res = await fetch(url);
-  if (!res.ok) throw await metaErrorFrom(res);
-
-  const json = await res.json();
+  const json = await metaFetch(metaUrl(`${normalizeAdAccountId(adAccountId)}/insights`, accessToken, params));
   const d = json.data?.[0];
 
   if (!d) {
@@ -121,23 +177,20 @@ export interface MetaAdLevelStat {
 }
 
 // Per-ad breakdown (level=ad) for a date range — used to join against GHL's
-// per-lead ad attribution (utmAdId) to compute true cost-per-lead per creative.
+// per-lead ad attribution to compute true cost-per-lead per creative.
 export async function fetchMetaAdLevelStats(
   accessToken: string,
   adAccountId: string,
   since: string,
   until: string
 ): Promise<MetaAdLevelStat[]> {
-  const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
-  const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
-  const fields = 'ad_id,ad_name,spend,impressions,clicks';
   const results: MetaAdLevelStat[] = [];
-  let url = `${META_BASE}/${account}/insights?level=ad&fields=${fields}&time_range=${timeRange}&limit=200&access_token=${accessToken}`;
+  let url = metaUrl(`${normalizeAdAccountId(adAccountId)}/insights`, accessToken, {
+    level: 'ad', fields: 'ad_id,ad_name,spend,impressions,clicks', time_range: JSON.stringify({ since, until }), limit: '200',
+  });
 
   while (url) {
-    const res = await fetch(url);
-    if (!res.ok) throw await metaErrorFrom(res);
-    const json = await res.json();
+    const json = await metaFetch(url);
     for (const d of json.data ?? []) {
       results.push({
         adId: d.ad_id,
@@ -160,13 +213,9 @@ export async function fetchMetaAdSpendRange(
   since: string,
   until: string
 ): Promise<number> {
-  const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
-  const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
-  const url = `${META_BASE}/${account}/insights?fields=spend&time_range=${timeRange}&access_token=${accessToken}`;
-
-  const res = await fetch(url);
-  if (!res.ok) throw await metaErrorFrom(res);
-  const json = await res.json();
+  const json = await metaFetch(metaUrl(`${normalizeAdAccountId(adAccountId)}/insights`, accessToken, {
+    fields: 'spend', time_range: JSON.stringify({ since, until }),
+  }));
   return parseFloat(json.data?.[0]?.spend ?? '0');
 }
 
@@ -180,15 +229,13 @@ export async function fetchMetaSpendByMonth(
   since: string,
   until: string
 ): Promise<{ month: string; spend: number }[]> {
-  const account = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
-  const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
   const results: { month: string; spend: number }[] = [];
-  let url = `${META_BASE}/${account}/insights?fields=spend&time_range=${timeRange}&time_increment=monthly&limit=200&access_token=${accessToken}`;
+  let url = metaUrl(`${normalizeAdAccountId(adAccountId)}/insights`, accessToken, {
+    fields: 'spend', time_range: JSON.stringify({ since, until }), time_increment: 'monthly', limit: '200',
+  });
 
   while (url) {
-    const res = await fetch(url);
-    if (!res.ok) throw await metaErrorFrom(res);
-    const json = await res.json();
+    const json = await metaFetch(url);
     for (const d of json.data ?? []) {
       results.push({ month: String(d.date_start).slice(0, 7), spend: parseFloat(d.spend ?? '0') });
     }
@@ -196,4 +243,111 @@ export async function fetchMetaSpendByMonth(
   }
 
   return results;
+}
+
+// ── Connection diagnostics ──────────────────────────────────────────────────
+// Everything below backs the "is this connection actually healthy" check
+// (lib/metaHealth.ts) — until now nothing ever verified a saved token.
+
+export interface MetaTokenInfo {
+  valid: boolean;
+  neverExpires: boolean;
+  expiresAt: string | null; // ISO; null when it never expires or Meta didn't say
+  scopes: string[];
+  type: string | null; // e.g. USER, SYSTEM_USER
+}
+
+// Meta's token debugger. Normally called with an app token; a token can usually
+// inspect itself, which is all that's available here — callers treat a failure as
+// "expiry unknown", not as a broken connection.
+export async function fetchMetaTokenInfo(token: string): Promise<MetaTokenInfo> {
+  const t = cleanMetaToken(token);
+  const json = await metaFetch(`${META_BASE}/debug_token?${new URLSearchParams({ input_token: t, access_token: t })}`);
+  const d = json.data ?? {};
+  const expires = typeof d.expires_at === 'number' ? d.expires_at : null;
+  return {
+    valid: d.is_valid !== false,
+    neverExpires: expires === 0,
+    expiresAt: expires && expires > 0 ? new Date(expires * 1000).toISOString() : null,
+    scopes: Array.isArray(d.scopes) ? d.scopes.map(String) : [],
+    type: d.type ? String(d.type) : null,
+  };
+}
+
+export async function fetchMetaGrantedPermissions(token: string): Promise<string[]> {
+  const json = await metaFetch(metaUrl('me/permissions', token));
+  return (json.data ?? []).filter((p: any) => p.status === 'granted').map((p: any) => String(p.permission));
+}
+
+// account_status values, from Meta's Ad Account reference.
+const ACCOUNT_STATUS: Record<number, string> = {
+  1: 'Active', 2: 'Disabled', 3: 'Payment problem (unsettled)', 7: 'Pending risk review', 8: 'Pending payment settlement',
+  9: 'In payment grace period', 100: 'Pending closure', 101: 'Closed', 201: 'Active', 202: 'Closed',
+};
+
+export interface MetaAccountInfo {
+  id: string;
+  name: string | null;
+  statusCode: number | null;
+  status: string;
+  disableReason: number | null; // 0/null when not disabled
+  currency: string | null;
+  timezone: string | null;
+}
+
+export async function fetchMetaAccountInfo(token: string, adAccountId: string): Promise<MetaAccountInfo> {
+  const id = normalizeAdAccountId(adAccountId);
+  const d = await metaFetch(metaUrl(id, token, { fields: 'name,account_status,disable_reason,currency,timezone_name' }));
+  const code = typeof d.account_status === 'number' ? d.account_status : null;
+  return {
+    id,
+    name: d.name ?? null,
+    statusCode: code,
+    status: code != null ? (ACCOUNT_STATUS[code] ?? `Status ${code}`) : 'Unknown',
+    disableReason: typeof d.disable_reason === 'number' ? d.disable_reason : null,
+    currency: d.currency ?? null,
+    timezone: d.timezone_name ?? null,
+  };
+}
+
+// `lead` is Meta's own total of on-Facebook (instant form) and website (pixel)
+// leads, so adding the specific types to it would count everything twice; they're
+// only used when `lead` isn't reported.
+export function metaLeadsFromActions(actions: { action_type: string; value: string }[] | undefined): number {
+  if (!actions?.length) return 0;
+  const by = new Map(actions.map((a) => [a.action_type, parseFloat(a.value) || 0]));
+  if (by.has('lead')) return by.get('lead')!;
+  const onFacebook = by.get('onsite_conversion.lead_grouped') ?? by.get('leadgen_grouped') ?? 0;
+  return onFacebook + (by.get('offsite_conversion.fb_pixel_lead') ?? 0);
+}
+
+export interface MetaDailyRow {
+  date: string; // YYYY-MM-DD, in the ad account's timezone
+  spend: number;
+  impressions: number;
+  clicks: number;
+  leads: number; // as Meta counts them
+}
+
+// One row per day. Gives delivery (is it spending, and when did it last), and Meta's
+// own lead count, from a single request.
+export async function fetchMetaDailyInsights(token: string, adAccountId: string, datePreset: string = 'last_30d'): Promise<MetaDailyRow[]> {
+  const rows: MetaDailyRow[] = [];
+  let url = metaUrl(`${normalizeAdAccountId(adAccountId)}/insights`, token, {
+    fields: 'spend,impressions,clicks,actions', date_preset: datePreset, time_increment: '1', limit: '100',
+  });
+  while (url) {
+    const json = await metaFetch(url);
+    for (const d of json.data ?? []) {
+      rows.push({
+        date: String(d.date_start),
+        spend: parseFloat(d.spend ?? '0'),
+        impressions: parseInt(d.impressions ?? '0', 10),
+        clicks: parseInt(d.clicks ?? '0', 10),
+        leads: metaLeadsFromActions(d.actions),
+      });
+    }
+    url = json.paging?.next ?? '';
+  }
+  return rows;
 }

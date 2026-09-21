@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions, canViewFinancials } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { cleanMetaToken, normalizeAdAccountId } from '@/lib/meta';
 import { fetchLocationPipelines } from '@/lib/ghl';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -91,7 +92,9 @@ export async function POST(req: NextRequest) {
     body.ghl_api_key ?? null, body.ghl_location_id ?? null, pipelineId,
     stageLeads, stageContacted, stageUnqualified, stagePhone, stageInhome,
     body.retainer_price ?? 0, body.ad_spend ?? 0, body.daily_ad_spend ?? 0,
-    body.meta_access_token ?? null, body.meta_ad_account_id ?? null,
+    // Pasted by hand: a stray space/line break in either one makes Meta answer "invalid token"
+    body.meta_access_token ? cleanMetaToken(body.meta_access_token) : null,
+    body.meta_ad_account_id ? normalizeAdAccountId(body.meta_ad_account_id) : null,
     body.contract_url ?? null, body.slack_url ?? null,
     body.start_date ?? new Date().toISOString().slice(0, 10),
     body.date_launched ?? null, body.date_billed ?? null,

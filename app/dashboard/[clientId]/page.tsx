@@ -163,9 +163,10 @@ export default function ClientDashboardPage() {
     setLoading(false);
   }, [clientId, status, router]);
 
-  const syncGHL = useCallback(async () => {
+  // force: the Sync button skips the 10-minute Meta cache (a failed refresh still shows Meta's last good figure)
+  const syncGHL = useCallback(async (force = false) => {
     setSyncing(true);
-    const res = await fetch(`/api/clients/${clientId}/ghl`);
+    const res = await fetch(`/api/clients/${clientId}/ghl${force === true ? '?refresh=1' : ''}`);
     if (res.ok) {
       const data = await res.json();
       setPipeline(data.pipeline ?? data);
@@ -176,9 +177,9 @@ export default function ClientDashboardPage() {
     setSyncing(false);
   }, [clientId]);
 
-  const loadAdPerformance = useCallback(async () => {
+  const loadAdPerformance = useCallback(async (force = false) => {
     setLoadingAdPerf(true);
-    const res = await fetch(`/api/clients/${clientId}/ad-performance`);
+    const res = await fetch(`/api/clients/${clientId}/ad-performance${force === true ? '?refresh=1' : ''}`);
     if (res.ok) {
       const data = await res.json();
       setAdPerformance(data.ads ?? []);
@@ -271,7 +272,7 @@ export default function ClientDashboardPage() {
           )}
           {isAdmin && (
             <>
-              <button onClick={syncGHL} className="btn-ghost text-sm flex items-center gap-2" disabled={syncing}>
+              <button onClick={() => { syncGHL(true); loadAdPerformance(true); }} className="btn-ghost text-sm flex items-center gap-2" disabled={syncing}>
                 <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
                 {syncing ? 'Syncing…' : 'Sync GHL'}
               </button>
@@ -292,7 +293,7 @@ export default function ClientDashboardPage() {
             <div className="min-w-0">
               <p className="text-sm font-semibold" style={{ color: 'var(--red)' }}>Not everything on this page is syncing (only admins see this)</p>
               <ul className="text-xs mt-1.5 space-y-1" style={{ color: 'var(--text-muted)' }}>
-                {(syncIssues?.meta || adPerfError) && <li><strong style={{ color: 'var(--text)' }}>Meta:</strong> {syncIssues?.meta || adPerfError} The Meta sections below are hidden or out of date until this is fixed — update the token under Edit Client.</li>}
+                {(syncIssues?.meta || adPerfError) && <li><strong style={{ color: 'var(--text)' }}>Meta:</strong> {syncIssues?.meta || adPerfError} The Meta figures below may be missing or out of date until this is fixed — the Meta Health tab on Client Success says what's wrong and how to fix it.</li>}
                 {syncIssues?.ghl && <li><strong style={{ color: 'var(--text)' }}>GoHighLevel:</strong> {syncIssues.ghl}</li>}
               </ul>
             </div>

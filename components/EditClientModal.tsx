@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Client } from '@/types';
 import { X, Link2, Copy, Check, Trash2 } from 'lucide-react';
+import MetaConnectionTest from './MetaConnectionTest';
 
 interface Props {
   client: Client;
@@ -210,6 +211,10 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
               <input className="input" type="password" value={form.meta_access_token} onChange={(e) => set('meta_access_token', e.target.value)} placeholder="EAA…" />
             </div>
           </div>
+          <MetaConnectionTest token={form.meta_access_token} adAccountId={form.meta_ad_account_id} clientId={client.id} />
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Use a <strong style={{ color: 'var(--text)' }}>System User</strong> token so it never expires: Meta Business Settings → Users → System users → add one → assign this ad account ("View performance") → Generate token (pick your app, tick <code>ads_read</code>, expiry <em>Never</em>). One System User can cover every client. A personal login token (e.g. from the Graph API Explorer) stops working after about 60 days.
+          </p>
 
           {/* ── Resources ── */}
           <hr style={{ borderColor: 'var(--border)' }} />

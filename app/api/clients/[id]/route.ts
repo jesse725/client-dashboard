@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions, canViewFinancials } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { cleanMetaToken, normalizeAdAccountId } from '@/lib/meta';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -59,7 +60,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (updates.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
 
   const set = updates.map((f) => `${f} = ?`).join(', ');
-  const values = updates.map((f) => body[f]);
+  // Pasted by hand: a stray space/line break in either one makes Meta answer "invalid token"
+  const values = updates.map((f) =>
+    f === 'meta_access_token' && body[f] ? cleanMetaToken(body[f])
+    : f === 'meta_ad_account_id' && body[f] ? normalizeAdAccountId(body[f])
+    : body[f]
+  );
 
   db.prepare(`UPDATE clients SET ${set} WHERE id = ?`).run(...values, id);
   const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(id);
@@ -76,5 +82,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   const db = getDb();
   db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+  // Saved Meta answers / health check for this client (no foreign key ties them to the row)
+  db.prepare("DELETE FROM meta_cache WHERE key LIKE ? OR key LIKE ? OR key = ?").run(`stats:${Number(id)}:%`, `ads:${Number(id)}:%`, `check:${Number(id)}`);
   return NextResponse.json({ ok: true });
 }

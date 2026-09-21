@@ -6,6 +6,7 @@ import {
   ArrowLeft, CheckCircle, Copy, Check, ExternalLink,
   Loader2, Search, ChevronRight,
 } from 'lucide-react';
+import MetaConnectionTest from '@/components/MetaConnectionTest';
 
 interface Stage { id: string; name: string; position: number; }
 interface Pipeline { id: string; name: string; stages: Stage[]; }
@@ -504,10 +505,12 @@ function OnboardPage() {
                   <input className="input" type="password" value={form.meta_access_token} onChange={e => set('meta_access_token', e.target.value)} placeholder="EAA…" />
                 </div>
               </div>
+              <MetaConnectionTest token={form.meta_access_token} adAccountId={form.meta_ad_account_id} />
               <div className="rounded-lg p-3 text-xs space-y-1" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                 <p className="font-medium" style={{ color: 'var(--text)' }}>How to get these:</p>
                 <p>1. Ad Account ID — found in Meta Ads Manager URL or Business Settings → Ad Accounts</p>
-                <p>2. Access Token — Meta Developers → Graph API Explorer → Generate Token with <code>ads_read</code> permission → extend to long-lived token</p>
+                <p>2. Access Token — make a <strong style={{ color: 'var(--text)' }}>System User</strong> token so it never expires: Meta Business Settings → Users → System users → add one → assign this ad account ("View performance") → Generate token (pick your app, tick <code>ads_read</code>, expiry <em>Never</em>). One System User can cover every client.</p>
+                <p>A personal login token from the Graph API Explorer stops working after about 60 days, and the client's numbers quietly stop updating when it does.</p>
               </div>
             </>
           )}

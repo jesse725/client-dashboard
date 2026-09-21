@@ -1,31 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireFinancialAccess } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { fetchMetaAdStats } from '@/lib/meta';
+import { cleanMetaToken, fetchMetaAdStats, metaErrorMessage, normalizeAdAccountId } from '@/lib/meta';
+import { ageLabel, cachedMeta } from '@/lib/metaCache';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await requireFinancialAccess();
   if (!auth.ok) return auth.response;
 
   const db = getDb();
   const tokenRow = db.prepare("SELECT value FROM settings WHERE key = 'sales_meta_access_token'").get() as any;
   const acctRow = db.prepare("SELECT value FROM settings WHERE key = 'sales_meta_ad_account_id'").get() as any;
-  const accessToken = tokenRow?.value ?? '';
-  const adAccountId = acctRow?.value ?? '';
+  const accessToken = cleanMetaToken(tokenRow?.value);
+  const adAccountId = normalizeAdAccountId(acctRow?.value);
 
   if (!accessToken || !adAccountId) {
     return NextResponse.json({ connected: false, adAccountId: '' });
   }
 
+  // Three calls per visit, and this page is opened often — cached for ten minutes,
+  // and if Meta refuses a refresh the last good figures are shown, marked stale,
+  // instead of the whole section turning into an error.
+  const refresh = req.nextUrl.searchParams.get('refresh') === '1';
   try {
-    const [last7d, thisMonth, lifetime] = await Promise.all([
-      fetchMetaAdStats(accessToken, adAccountId, 'last_7d'),
-      fetchMetaAdStats(accessToken, adAccountId, 'this_month'),
-      fetchMetaAdStats(accessToken, adAccountId, 'maximum'),
-    ]);
-    return NextResponse.json({ connected: true, adAccountId, last7d, thisMonth, lifetime });
+    const [last7d, thisMonth, lifetime] = await Promise.all(
+      ['last_7d', 'this_month', 'maximum'].map((preset) =>
+        cachedMeta(`sales:${adAccountId}:${preset}`, { refresh }, () => fetchMetaAdStats(accessToken, adAccountId, preset))
+      )
+    );
+    const stale = [last7d, thisMonth, lifetime].find((c) => c.stale);
+    return NextResponse.json({
+      connected: true, adAccountId,
+      last7d: last7d.value, thisMonth: thisMonth.value, lifetime: lifetime.value,
+      ...(stale ? { warning: `${stale.error} Showing the last figures Meta returned, from ${ageLabel(stale.fetchedAt)}.` } : {}),
+    });
   } catch (e: any) {
-    return NextResponse.json({ connected: true, adAccountId, error: e.message }, { status: 200 });
+    return NextResponse.json({ connected: true, adAccountId, error: metaErrorMessage(e) }, { status: 200 });
   }
 }
 
@@ -37,11 +47,11 @@ export async function POST(req: NextRequest) {
   const db = getDb();
 
   if (ad_account_id !== undefined) {
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sales_meta_ad_account_id', ?)").run(String(ad_account_id));
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sales_meta_ad_account_id', ?)").run(normalizeAdAccountId(String(ad_account_id)));
   }
   // Only overwrite the token if a real (non-masked) value was sent
   if (access_token && !String(access_token).includes('•')) {
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sales_meta_access_token', ?)").run(String(access_token));
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('sales_meta_access_token', ?)").run(cleanMetaToken(String(access_token)));
   }
 
   return NextResponse.json({ ok: true });

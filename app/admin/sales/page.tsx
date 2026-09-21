@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import MetaConnectionTest from '@/components/MetaConnectionTest';
 import {
   BarChart2, TrendingUp, Phone, PhoneCall, DollarSign,
   RefreshCw, X, ChevronDown, Check, Users, Target,
@@ -812,7 +813,7 @@ function AdHealthView({ closedDeals }: { closedDeals: number }) {
   const [acctInput, setAcctInput] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [stats, setStats] = useState<{ last7d?: MetaStatsBlock; thisMonth?: MetaStatsBlock; lifetime?: MetaStatsBlock; error?: string } | null>(null);
+  const [stats, setStats] = useState<{ last7d?: MetaStatsBlock; thisMonth?: MetaStatsBlock; lifetime?: MetaStatsBlock; error?: string; warning?: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -869,6 +870,7 @@ function AdHealthView({ closedDeals }: { closedDeals: number }) {
               <input className="input" type="password" value={tokenInput} onChange={e => setTokenInput(e.target.value)}
                 placeholder={connected ? 'Enter new token to replace current one' : 'Paste your Meta access token…'} />
             </div>
+            <MetaConnectionTest scope="sales" token={tokenInput} adAccountId={acctInput} />
             <div className="flex gap-2">
               <button onClick={save} disabled={saving || !acctInput} className="btn-primary text-sm">
                 {saving ? 'Saving…' : 'Save & Connect'}
@@ -879,11 +881,20 @@ function AdHealthView({ closedDeals }: { closedDeals: number }) {
             </div>
           </div>
         ) : (
-          <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--green)' }}>
-            <Check size={12} /> Connected — {adAccountId}
-          </p>
+          <div className="space-y-3">
+            <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--green)' }}>
+              <Check size={12} /> Saved — {adAccountId}
+            </p>
+            <MetaConnectionTest scope="sales" token="" adAccountId={adAccountId} />
+          </div>
         )}
       </div>
+
+      {connected && stats?.warning && (
+        <div className="card p-4 text-sm" style={{ color: 'var(--yellow)' }}>
+          {stats.warning}
+        </div>
+      )}
 
       {connected && stats?.error && (
         <div className="card p-4 text-sm" style={{ color: 'var(--red)' }}>

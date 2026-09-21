@@ -1,6 +1,6 @@
-import { getDb } from './db';
 import { fetchGHLOpportunitiesRaw, resolveApiKey } from './ghl';
-import { fetchMetaAdLevelStats, metaErrorMessage } from './meta';
+import { cleanMetaToken, fetchMetaAdLevelStats, metaErrorMessage, metaWindow, normalizeAdAccountId } from './meta';
+import { ageLabel, cachedMeta } from './metaCache';
 import { Client } from '@/types';
 
 export interface AdPerformanceRow {
@@ -18,16 +18,100 @@ export interface ClientAdPerformance {
   ads: AdPerformanceRow[];
   bestCpl: number | null; // lowest CPL among ads that have at least one lead
   lastLeadAt: string | null; // most recent lead across the WHOLE pipeline (not just ad-attributed)
-  metaError: string | null; // Meta credentials are saved but the ad-level call failed — why
+  metaError: string | null; // Meta credentials are saved but the ad-level call failed (or is stale) — why
+}
+
+// ── Lead → ad attribution ───────────────────────────────────────────────────
+// A lead can only be credited to an ad if GoHighLevel recorded which ad it came
+// from. Two things can be recorded: the ad's ID, and — under GoHighLevel's own
+// recommended Facebook setup (utm_content={{ad.name}}) — the ad's NAME. This
+// used to look at the ID alone, so a client using that standard setup had every
+// lead silently unattributed and no ad ever showed a lead or a cost-per-lead.
+export interface AttributableOpp {
+  id: string;
+  createdAt: string;
+  attributions?: Record<string, unknown>[];
+}
+
+export interface AttributionResult {
+  leadsByAd: Map<string, number>;
+  lastLeadByAd: Map<string, string>;
+  windowLeads: number; // leads created on/after `since`
+  viaId: number; // matched to a Meta ad by its ID
+  viaName: number; // matched by ad name (only when exactly one Meta ad has that name)
+  unmatched: number; // carried an ad ID/name that no Meta ad in the window has (deleted, other account, renamed…)
+  none: number; // carried no ad identifier at all
+}
+
+const str = (v: unknown): string => (typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '');
+
+// Every ad ID / ad name GoHighLevel attached to a lead. Field names beyond
+// utmAdId/utmContent are what GoHighLevel's attribution exports use for the same
+// things; unknown ones are simply absent.
+export function adReferences(o: AttributableOpp): { ids: string[]; names: string[] } {
+  const ids: string[] = [];
+  const names: string[] = [];
+  for (const a of o.attributions ?? []) {
+    const id = str(a.utmAdId) || str(a.adId) || str(a.ad_id);
+    const name = str(a.utmContent) || str(a.adName) || str(a.ad_name);
+    if (id) ids.push(id);
+    if (name) names.push(name);
+  }
+  return { ids, names };
+}
+
+export function attributeLeads(opps: AttributableOpp[], ads: { adId: string; adName: string }[], since: string): AttributionResult {
+  const adIds = new Set(ads.map((a) => a.adId));
+  const idsByName = new Map<string, string[]>();
+  for (const a of ads) {
+    const key = a.adName.trim().toLowerCase();
+    idsByName.set(key, [...(idsByName.get(key) ?? []), a.adId]);
+  }
+
+  const out: AttributionResult = { leadsByAd: new Map(), lastLeadByAd: new Map(), windowLeads: 0, viaId: 0, viaName: 0, unmatched: 0, none: 0 };
+  for (const o of opps) {
+    if (new Date(o.createdAt) < new Date(since)) continue;
+    out.windowLeads++;
+    const { ids, names } = adReferences(o);
+
+    let adId = ids.find((id) => adIds.has(id));
+    let how: 'id' | 'name' | null = adId ? 'id' : null;
+    if (!adId) {
+      for (const n of names) {
+        const candidates = idsByName.get(n.toLowerCase());
+        // Names aren't unique — the same creative is often reused across ad sets —
+        // so a name is only trusted when it points at a single ad.
+        if (candidates?.length === 1) { adId = candidates[0]; how = 'name'; break; }
+      }
+    }
+
+    if (!adId) {
+      if (ids.length || names.length) out.unmatched++; else out.none++;
+      continue;
+    }
+    if (how === 'id') out.viaId++; else out.viaName++;
+    out.leadsByAd.set(adId, (out.leadsByAd.get(adId) ?? 0) + 1);
+    const prev = out.lastLeadByAd.get(adId);
+    if (!prev || new Date(o.createdAt) > new Date(prev)) out.lastLeadByAd.set(adId, o.createdAt);
+  }
+  return out;
+}
+
+// Ad-level Meta stats, cached like the spend total (lib/metaCache.ts).
+export async function getMetaAdLevel(client: Client, opts: { refresh?: boolean } = {}) {
+  const { since, until } = metaWindow(client.start_date);
+  const account = normalizeAdAccountId(client.meta_ad_account_id);
+  return cachedMeta(`ads:${client.id}:${account}:${since}`, opts, () =>
+    fetchMetaAdLevelStats(cleanMetaToken(client.meta_access_token), account, since, until)
+  );
 }
 
 // Single source of truth for per-ad CPL + last-lead tracking — used by both
 // the individual client dashboard and the admin Client Tracker overview.
-export async function getClientAdPerformance(client: Client, agencyGhlKey: string): Promise<ClientAdPerformance> {
-  const since = client.start_date;
-  const until = new Date().toISOString().slice(0, 10);
+export async function getClientAdPerformance(client: Client, agencyGhlKey: string, opts: { refresh?: boolean } = {}): Promise<ClientAdPerformance> {
+  const { since } = metaWindow(client.start_date);
 
-  let opps: { id: string; createdAt: string; attributions?: { utmAdId?: string }[] }[] = [];
+  let opps: AttributableOpp[] = [];
   if (client.ghl_location_id && client.ghl_pipeline_id) {
     const apiKey = resolveApiKey(client.ghl_api_key, agencyGhlKey);
     // No key at all would just be a guaranteed 401 — the reason for that is
@@ -50,29 +134,21 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   // the "Last Lead" column (and turned it red, reading as "no leads") every time
   // a Meta token expired. Best CPL is the only thing that genuinely needs Meta.
   let adStats: Awaited<ReturnType<typeof fetchMetaAdLevelStats>>;
+  let metaError: string | null = null;
   try {
-    adStats = await fetchMetaAdLevelStats(client.meta_access_token, client.meta_ad_account_id, since, until);
+    const got = await getMetaAdLevel(client, opts);
+    adStats = got.value;
+    if (got.stale) metaError = `${got.error} Showing per-ad figures from ${ageLabel(got.fetchedAt)}.`;
   } catch (e) {
     return { ads: [], bestCpl: null, lastLeadAt, metaError: metaErrorMessage(e) };
   }
 
-  const leadsByAdId = new Map<string, number>();
-  const lastLeadByAdId = new Map<string, string>();
-  for (const o of opps) {
-    if (new Date(o.createdAt) < new Date(since)) continue;
-    const adId = o.attributions?.find(a => a.utmAdId)?.utmAdId;
-    if (!adId) continue;
-    leadsByAdId.set(adId, (leadsByAdId.get(adId) ?? 0) + 1);
-    const prevLatest = lastLeadByAdId.get(adId);
-    if (!prevLatest || new Date(o.createdAt) > new Date(prevLatest)) {
-      lastLeadByAdId.set(adId, o.createdAt);
-    }
-  }
+  const attribution = attributeLeads(opps, adStats, since);
 
   const ads: AdPerformanceRow[] = adStats
     .filter(a => a.spend > 0)
     .map(a => {
-      const leads = leadsByAdId.get(a.adId) ?? 0;
+      const leads = attribution.leadsByAd.get(a.adId) ?? 0;
       return {
         adId: a.adId,
         adName: a.adName,
@@ -81,7 +157,7 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
         cpl: leads > 0 ? a.spend / leads : null,
         impressions: a.impressions,
         clicks: a.clicks,
-        lastLeadAt: lastLeadByAdId.get(a.adId) ?? null,
+        lastLeadAt: attribution.lastLeadByAd.get(a.adId) ?? null,
       };
     })
     // Best CPL first; ads with no leads yet sort to the bottom (they're the
@@ -96,5 +172,5 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   const cplValues = ads.map(a => a.cpl).filter((v): v is number => v != null);
   const bestCpl = cplValues.length > 0 ? Math.min(...cplValues) : null;
 
-  return { ads, bestCpl, lastLeadAt, metaError: null };
+  return { ads, bestCpl, lastLeadAt, metaError };
 }

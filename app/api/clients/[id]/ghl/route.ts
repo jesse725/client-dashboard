@@ -3,10 +3,12 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { fetchGHLPipelineStats, resolveApiKey } from '@/lib/ghl';
-import { fetchMetaAdStats, metaErrorMessage } from '@/lib/meta';
+import { metaErrorMessage } from '@/lib/meta';
+import { ageLabel } from '@/lib/metaCache';
+import { getMetaSpend } from '@/lib/clientStats';
 import { Client } from '@/types';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -27,17 +29,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const agencyKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
   const apiKey = resolveApiKey(client.ghl_api_key, agencyKey);
 
-  // Scope Meta stats to the partnership window — start_date through today —
-  // so a shared/reused ad account doesn't pull in pre-partnership spend.
-  const since = client.start_date;
-  const until = new Date().toISOString().slice(0, 10);
-
   // GHL and Meta are independent — one failing must not blank the other, and
   // (for admins) the reason has to come back instead of just disappearing.
   const isAdmin = user.role === 'admin';
+  // Meta stats are scoped to the partnership window (start_date to today, so a
+  // shared/reused ad account doesn't pull in pre-partnership spend) and cached —
+  // the same cached figure the Client Tracker uses, so the two always agree.
+  const refresh = req.nextUrl.searchParams.get('refresh') === '1';
   let metaError: string | null = null;
   const metaPromise = client.meta_access_token && client.meta_ad_account_id
-    ? fetchMetaAdStats(client.meta_access_token, client.meta_ad_account_id, 'maximum', { since, until }).catch((e) => {
+    ? getMetaSpend(client, { refresh }).then((got) => {
+        if (got.stale) {
+          metaError = `${got.error} Showing the last figure Meta returned, from ${ageLabel(got.fetchedAt)}.`;
+          console.error(`[meta] ${client.name} (client #${client.id}): ${got.error} — serving the figure from ${ageLabel(got.fetchedAt)}`);
+        }
+        return got.value;
+      }).catch((e) => {
         metaError = metaErrorMessage(e);
         console.error(`[meta] ${client.name} (client #${client.id}): ${metaError}`);
         return null;
