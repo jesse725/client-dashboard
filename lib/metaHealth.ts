@@ -1,6 +1,6 @@
 import { getDb } from './db';
 import { attributeLeads } from './adPerformance';
-import { fetchAllOpportunitiesRaw, resolveApiKey } from './ghl';
+import { describeMissingGhlConfig, fetchAllOpportunitiesRaw, resolveApiKey } from './ghl';
 import {
   cleanMetaToken, fetchMetaAccountInfo, fetchMetaAdLevelStats, fetchMetaDailyInsights, fetchMetaGrantedPermissions,
   fetchMetaTokenInfo, looksLikeAdAccountId, metaErrorMessage, metaWindow, normalizeAdAccountId, MetaApiError,
@@ -157,11 +157,21 @@ export async function checkMetaConnection(rawToken: string, rawAccount: string):
 
 // ── Lead tracking: does what Meta delivered match what reached GoHighLevel? ─────
 export async function checkLeadTracking(client: Client, agencyKey: string, check: MetaCheck): Promise<void> {
-  if (!client.ghl_location_id || !client.ghl_pipeline_id) return;
   const issue = (level: IssueLevel, message: string, fix?: string) => check.issues.push({ level, message, ...(fix ? { fix } : {}) });
+  const empty: LeadReconciliation = { newLeads: 0, totalLeads: 0, byStatus: {}, attribution: null, attributionFieldsSeen: [], error: null };
+
+  // This used to just return here with no comment at all — a client with no
+  // GoHighLevel pipeline connected (every field on that onboarding step is
+  // optional) would show as fully "Healthy" in this tab, with nothing to say
+  // that its leads are never actually pulled.
+  const notConfigured = describeMissingGhlConfig(client);
+  if (notConfigured) {
+    check.leadTracking = { ...empty, error: notConfigured };
+    issue('error', notConfigured, 'In Edit Client → GoHighLevel, add the Location ID, pick a Pipeline, and map at least the New Lead stage.');
+    return;
+  }
 
   const apiKey = resolveApiKey(client.ghl_api_key, agencyKey);
-  const empty: LeadReconciliation = { newLeads: 0, totalLeads: 0, byStatus: {}, attribution: null, attributionFieldsSeen: [], error: null };
   if (!apiKey) {
     check.leadTracking = { ...empty, error: 'No GoHighLevel API key is saved for this client and no agency key is set.' };
     issue('error', check.leadTracking.error!, 'Add the agency key under Admin Settings → GHL Sync.');
@@ -170,7 +180,7 @@ export async function checkLeadTracking(client: Client, agencyKey: string, check
 
   let opps: any[];
   try {
-    opps = await fetchAllOpportunitiesRaw(apiKey, client.ghl_location_id, client.ghl_pipeline_id, { strict: true });
+    opps = await fetchAllOpportunitiesRaw(apiKey, client.ghl_location_id!, client.ghl_pipeline_id!, { strict: true });
   } catch (e: any) {
     check.leadTracking = { ...empty, error: e?.message ?? String(e) };
     issue('error', `Couldn't read leads from GoHighLevel, so they can't be compared with Meta's — ${check.leadTracking.error}`);

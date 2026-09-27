@@ -192,6 +192,21 @@ function SpendIndicator({ c }: { c: ClientRow }) {
   return null;
 }
 
+// A GHL reason ending like this means no pipeline was ever connected (see
+// lib/ghl.ts's describeMissingGhlConfig) — there's no earlier real sync to
+// call "last saved", so that trailing sentence doesn't fit these.
+const GHL_NEVER_CONFIGURED = /leads (have never been pulled|can't be pulled without one)\.$/;
+
+// "…showing the last saved count" is only true once a real sync has run and then
+// failed — a client with no pipeline connected at all has no earlier count to
+// fall back to, so its own reason is used as-is instead of that preamble.
+function ghlTooltip(reason: string, context: 'leads' | 'lastLead'): string {
+  if (GHL_NEVER_CONFIGURED.test(reason)) return reason;
+  return context === 'lastLead'
+    ? `Unknown — GoHighLevel isn't syncing for this client. ${reason}`
+    : `GoHighLevel isn't syncing for this client — showing the last saved count, which may be out of date. ${reason}`;
+}
+
 // Groups clients by failure reason so 9 expired tokens read as one line, not nine.
 function SyncIssuesBanner({ clients, loadError, ghlError }: { clients: ClientRow[]; loadError: string | null; ghlError: string | null }) {
   const byReason = new Map<string, { names: string[]; stale: boolean }>();
@@ -233,7 +248,8 @@ function SyncIssuesBanner({ clients, loadError, ghlError }: { clients: ClientRow
           )}
           {[...ghlByReason.entries()].map(([reason, names]) => (
             <li key={`ghl-${reason}`}>
-              <strong style={{ color: 'var(--text)' }}>GoHighLevel leads — {names.length} client{names.length === 1 ? '' : 's'}</strong> ({names.join(', ')}): {reason} Lead counts shown are the last saved numbers, and Last Lead is unknown.
+              <strong style={{ color: 'var(--text)' }}>GoHighLevel leads — {names.length} client{names.length === 1 ? '' : 's'}</strong> ({names.join(', ')}): {reason}{' '}
+              {GHL_NEVER_CONFIGURED.test(reason) ? 'Their Leads count is stuck at 0, not stale — nothing has ever been pulled.' : 'Lead counts shown are the last saved numbers, and Last Lead is unknown.'}
             </li>
           ))}
         </ul>
@@ -321,7 +337,7 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
         <span className="flex items-center gap-1">
           {c.cached_leads > 0 ? `${c.cached_leads} leads` : '— leads'}
           {c.ghl_error && (
-            <span title={`GoHighLevel isn't syncing for this client — showing the last saved count, which may be out of date. ${c.ghl_error}`}>
+            <span title={ghlTooltip(c.ghl_error, 'leads')}>
               <AlertTriangle size={10} style={{ color: 'var(--red)' }} />
             </span>
           )}
@@ -440,12 +456,12 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                         : Math.floor((Date.now() - new Date(c.last_lead_at).getTime()) / 86400000) <= 7 ? 'var(--yellow)'
                         : 'var(--red)',
                     }}>
-                      {c.ghl_error ? <span title={`Unknown — GoHighLevel isn't syncing for this client. ${c.ghl_error}`}>Unknown</span> : fmtLastLead(c.last_lead_at)}
+                      {c.ghl_error ? <span title={ghlTooltip(c.ghl_error, 'lastLead')}>Unknown</span> : fmtLastLead(c.last_lead_at)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {c.cached_leads > 0 ? c.cached_leads : '—'}
                       {c.ghl_error && (
-                        <span title={`GoHighLevel isn't syncing for this client — showing the last saved count, which may be out of date. ${c.ghl_error}`}>
+                        <span title={ghlTooltip(c.ghl_error, 'leads')}>
                           <AlertTriangle size={11} className="inline ml-1" style={{ color: 'var(--red)' }} />
                         </span>
                       )}

@@ -1,5 +1,5 @@
 import { getDb } from './db';
-import { fetchGHLPipelineStats, resolveApiKey } from './ghl';
+import { describeMissingGhlConfig, fetchGHLPipelineStats, resolveApiKey } from './ghl';
 import { cleanMetaToken, fetchMetaAdStats, metaErrorMessage, metaWindow, normalizeAdAccountId, type MetaAdStats } from './meta';
 import { ageLabel, cachedMeta, type Cached } from './metaCache';
 import { Client } from '@/types';
@@ -46,8 +46,8 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string, o
   let inhome = 0;
   let contacted = 0;
   let phone = 0;
-  let ghlError: string | null = null;
-  if (client.ghl_location_id && client.ghl_pipeline_id) {
+  let ghlError: string | null = describeMissingGhlConfig(client);
+  if (!ghlError) {
     try {
       const apiKey = resolveApiKey(client.ghl_api_key, agencyGhlKey);
       if (!apiKey) {
@@ -56,7 +56,7 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string, o
       // strict: a failed page must throw rather than quietly return a partial
       // (or empty) list — the counts get written to the cache below, so a
       // truncated fetch would overwrite good numbers with smaller ones.
-      const pipeline = await fetchGHLPipelineStats(apiKey, client.ghl_location_id, client.ghl_pipeline_id, {
+      const pipeline = await fetchGHLPipelineStats(apiKey, client.ghl_location_id!, client.ghl_pipeline_id!, {
         leads: client.stage_leads ?? undefined,
         contacted: client.stage_contacted ?? undefined,
         unqualified: client.stage_unqualified ?? undefined,
@@ -73,6 +73,10 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string, o
       ghlError = e?.message ?? String(e);
       console.error(`[ghl] ${client.name} (client #${client.id}): ${ghlError}`);
     }
+  } else {
+    // Never configured at all — nothing to retry, but still worth a log line
+    // rather than a call that silently never happens.
+    console.error(`[ghl] ${client.name} (client #${client.id}): ${ghlError}`);
   }
   if (leads === 0 && inhome === 0) {
     leads = client.cached_leads ?? 0;

@@ -155,6 +155,16 @@ function OnboardPage() {
   }
 
   async function handleSubmit() {
+    // Every field in GHL Setup is optional (a new client's sub-account may not be
+    // ready yet), so it's easy to click through it without meaning to skip it —
+    // and once created, nothing on Client Success says leads were never pulled;
+    // it just shows 0 forever. Make it a deliberate choice instead of an accident.
+    if (!form.ghl_location_id || !form.ghl_pipeline_id) {
+      const proceed = window.confirm(
+        "No GoHighLevel pipeline is connected — leads won't be counted for this client until you add one (Edit Client → GoHighLevel, or re-run GHL Setup here).\n\nCreate the client anyway?"
+      );
+      if (!proceed) return;
+    }
     setSubmitting(true);
     const res = await fetch('/api/clients', {
       method: 'POST',

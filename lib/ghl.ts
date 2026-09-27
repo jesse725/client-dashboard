@@ -247,6 +247,24 @@ export async function fetchGHLOpportunitiesRaw(
 // `updatedAt`, `assignedTo`) — same pagination guarantees as above.
 export { fetchAllOpportunitiesRaw };
 
+// ── Config check ─────────────────────────────────────────────────────────────
+// A client created without a GoHighLevel pipeline (every field on that onboarding
+// step is optional, and it's easy to click through without noticing) never has
+// leads pulled at all — every caller used to just skip the fetch and quietly show
+// zeros, with nothing to say why. Shared so every place that checks the same
+// thing (the tracker, the client's own dashboard, Meta Health) says it the same
+// way. Returns null when a pipeline IS connected — i.e. there's nothing to report.
+export function describeMissingGhlConfig(client: { ghl_location_id: string | null; ghl_pipeline_id: string | null }): string | null {
+  if (client.ghl_location_id && client.ghl_pipeline_id) return null;
+  if (!client.ghl_location_id && !client.ghl_pipeline_id) {
+    return 'No GoHighLevel pipeline is connected for this client — leads have never been pulled.';
+  }
+  if (!client.ghl_pipeline_id) {
+    return "A GoHighLevel location is saved, but no pipeline has been chosen — leads can't be pulled without one.";
+  }
+  return "A GoHighLevel pipeline is set, but no location is saved — leads can't be pulled without one.";
+}
+
 // ── Key resolver ─────────────────────────────────────────────────────────────
 // If client has their own key use it; otherwise fall back to agency key.
 export function resolveApiKey(locationApiKey: string | null, agencyApiKey: string): string {

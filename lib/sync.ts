@@ -55,20 +55,31 @@ export async function runGHLSync(): Promise<SyncResult> {
         // Fetch pipelines to auto-map stages if not already set
         let pipelineId = existing?.ghl_pipeline_id ?? null;
         let stageLeads = existing?.stage_leads ?? null;
+        let stageContacted = existing?.stage_contacted ?? null;
         let stageUnqualified = existing?.stage_unqualified ?? null;
         let stagePhone = existing?.stage_phone ?? null;
         let stageInhome = existing?.stage_inhome ?? null;
 
         const pipelines = await fetchLocationPipelines(apiKey, loc.id);
-        const pipeline = pipelines[0]; // default to first pipeline
+        // The pipeline this client is already configured for (if any) — not just
+        // pipelines[0] — so re-running sync backfills a still-missing stage from
+        // the RIGHT pipeline's stage list instead of skipping it because *some*
+        // pipeline was already chosen (that used to gate the whole block, so a
+        // client stuck missing one stage id stayed stuck on every later sync).
+        // If a pipeline WAS chosen but it's no longer in this location's list
+        // (deleted in GHL), don't guess at a substitute — same as the original
+        // behavior, leave its stages alone rather than mapping from the wrong one.
+        const pipeline = pipelineId ? pipelines.find((p) => p.id === pipelineId) : pipelines[0];
 
-        if (pipeline && !pipelineId) {
-          pipelineId = pipeline.id;
-          // Auto-map stages by name (fuzzy match)
+        if (pipeline) {
+          if (!pipelineId) pipelineId = pipeline.id;
+          // Auto-map any stage that's still unmapped, by name (fuzzy match)
           for (const stage of pipeline.stages) {
             const n = stage.name.toLowerCase();
             if (!stageLeads && (n.includes('lead') || n.includes('new') || n.includes('inbound'))) {
               stageLeads = stage.id;
+            } else if (!stageContacted && (n.includes('contact') || n.includes('respond'))) {
+              stageContacted = stage.id;
             } else if (!stageUnqualified && (n.includes('unqualif') || n.includes('no show') || n.includes('not a fit') || n.includes('disqualif'))) {
               stageUnqualified = stage.id;
             } else if (!stagePhone && (n.includes('phone') || n.includes('call') || n.includes('booked') && n.includes('call'))) {
@@ -88,9 +99,9 @@ export async function runGHLSync(): Promise<SyncResult> {
           db.prepare(`
             INSERT INTO clients (
               name, slug, logo_url, ghl_api_key, ghl_location_id, ghl_pipeline_id,
-              stage_leads, stage_unqualified, stage_phone, stage_inhome,
+              stage_leads, stage_contacted, stage_unqualified, stage_phone, stage_inhome,
               retainer_price, ad_spend, start_date, ghl_custom_fields
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, date('now'), ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, date('now'), ?)
           `).run(
             loc.name,
             slug,
@@ -99,6 +110,7 @@ export async function runGHLSync(): Promise<SyncResult> {
             loc.id,
             pipelineId,
             stageLeads,
+            stageContacted,
             stageUnqualified,
             stagePhone,
             stageInhome,
@@ -113,6 +125,7 @@ export async function runGHLSync(): Promise<SyncResult> {
               logo_url = COALESCE(logo_url, ?),
               ghl_pipeline_id = COALESCE(ghl_pipeline_id, ?),
               stage_leads = COALESCE(stage_leads, ?),
+              stage_contacted = COALESCE(stage_contacted, ?),
               stage_unqualified = COALESCE(stage_unqualified, ?),
               stage_phone = COALESCE(stage_phone, ?),
               stage_inhome = COALESCE(stage_inhome, ?),
@@ -123,6 +136,7 @@ export async function runGHLSync(): Promise<SyncResult> {
             loc.logoUrl ?? null,
             pipelineId,
             stageLeads,
+            stageContacted,
             stageUnqualified,
             stagePhone,
             stageInhome,
