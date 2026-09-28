@@ -148,7 +148,7 @@ function OnboardPage() {
           const n = s.name.toLowerCase();
           if (!updates.stage_leads && (n.includes('new lead') || n.includes('new prospect') || n === 'lead')) updates.stage_leads = s.id;
           if (!updates.stage_contacted && (n.includes('contact') || n.includes('respond'))) updates.stage_contacted = s.id;
-          if (!updates.stage_phone && (n.includes('phone') || n.includes('call') || n.includes('discovery'))) updates.stage_phone = s.id;
+          if (!updates.stage_phone && (n.includes('phone') || n.includes('discovery') || (n.includes('call') && n.includes('book')))) updates.stage_phone = s.id;
           if (!updates.stage_inhome && (n.includes('home') || n.includes('in person') || n.includes('quote') || n.includes('site'))) updates.stage_inhome = s.id;
           if (!updates.stage_unqualified && (n.includes('unqualified') || n.includes('disqualified') || n.includes('not a fit'))) updates.stage_unqualified = s.id;
         }

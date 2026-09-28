@@ -82,7 +82,14 @@ export async function runGHLSync(): Promise<SyncResult> {
               stageContacted = stage.id;
             } else if (!stageUnqualified && (n.includes('unqualif') || n.includes('no show') || n.includes('not a fit') || n.includes('disqualif'))) {
               stageUnqualified = stage.id;
-            } else if (!stagePhone && (n.includes('phone') || n.includes('call') || n.includes('booked') && n.includes('call'))) {
+            } else if (!stagePhone && (n.includes('phone') || n.includes('discovery') || (n.includes('call') && n.includes('book')))) {
+              // Bare 'call' used to match here on its own — which also matches
+              // "Dead leads (5+ calls no response)", a dead-end stage that sorts
+              // BEFORE the real "Discovery Call Booked" stage in every client's
+              // pipeline. Once matched it stuck permanently (the `!stagePhone`
+              // guard blocks every later stage from ever correcting it), silently
+              // mapping "phone appointment" to "dead lead" for any client synced
+              // fresh after that stage existed. Confirmed live on 5 clients.
               stagePhone = stage.id;
             } else if (!stageInhome && (n.includes('home') || n.includes('in-home') || n.includes('appoint') || n.includes('consult'))) {
               stageInhome = stage.id;
