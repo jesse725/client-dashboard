@@ -165,17 +165,22 @@ export function syncClientManagementPay(employeeId: number) {
     `).get(employeeId, description);
 
   const addBonus = (naturalBounds: PeriodBounds, description: string, amount: number) => {
-    // Don't attach a charge to a paycheck that's already gone out — sweep it
-    // onto the current period instead.
+    // A charge whose natural payday already happened without ever being
+    // logged used to get dumped onto whatever period is open now — a lump-
+    // sum catch-up the moment this roster/launch date was entered (often
+    // weeks or months late) that could easily double-count amounts already
+    // settled outside this system. Skip it instead: assume anything whose
+    // own due date has already passed was already paid, and only charge
+    // what's due today or later. Only a charge whose natural period is
+    // already CLOSED (paid) still needs to land somewhere — that one genuinely
+    // wasn't part of the assumed-already-settled backlog, it just missed its
+    // own paycheck by a matter of days.
+    if (naturalBounds.payoutDate < today) return;
     let bounds = naturalBounds;
-    if (bounds.payoutDate < today) {
-      bounds = currentPeriod;
-    } else {
-      const existing = db.prepare(
-        'SELECT status FROM pay_periods WHERE employee_id = ? AND payout_date = ?'
-      ).get(employeeId, bounds.payoutDate) as any;
-      if (existing?.status === 'paid') bounds = currentPeriod;
-    }
+    const existing = db.prepare(
+      'SELECT status FROM pay_periods WHERE employee_id = ? AND payout_date = ?'
+    ).get(employeeId, bounds.payoutDate) as any;
+    if (existing?.status === 'paid') bounds = currentPeriod;
     const periodId = ensurePeriod(employeeId, bounds);
     db.prepare(
       "INSERT INTO pay_period_bonuses (pay_period_id, description, amount, added_by) VALUES (?, ?, ?, 'system')"
