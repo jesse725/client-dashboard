@@ -51,8 +51,12 @@ export function calcMetrics(client: Client, quotes: Quote[], pipeline: PipelineS
   const cpih = (pipeline.inhome || 0) > 0 ? totalAdSpend / (pipeline.inhome || 0) : 0;
 
   // Funnel conversion rates
-  const totalAppointments = (pipeline.phone || 0) + (pipeline.inhome || 0);
-  const totalContacted    = (pipeline.contacted || 0) + (pipeline.phone || 0) + (pipeline.inhome || 0);
+  // pipeline.phone/inhome (lib/ghl.ts fetchGHLPipelineStats) are cumulative —
+  // "ever reached this milestone", not "still sitting there right now" — and
+  // inhome is already a subset of phone, so summing them here would double-
+  // count anyone who reached in-home.
+  const totalAppointments = pipeline.phone || 0;
+  const totalContacted    = (pipeline.contacted || 0) + (pipeline.phone || 0);
   const contactRate          = pipeline.leads    > 0 ? (totalContacted       / pipeline.leads)    * 100 : 0;
   const leadToApptRate       = pipeline.leads    > 0 ? (totalAppointments   / pipeline.leads)    * 100 : 0;
   const apptToCloseRate      = totalAppointments > 0 ? (closedDeals         / totalAppointments) * 100 : 0;

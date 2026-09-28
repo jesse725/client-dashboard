@@ -196,6 +196,26 @@ async function fetchAllOpportunitiesRaw(
   return allOpps;
 }
 
+// "phone"/"inhome" further down this pipeline that still mean the milestone
+// happened — matched by NAME, not position: "Unqualified"/"Lost" sort near
+// the end of this template despite being branch exits, not further progress,
+// so a position comparison would sweep those in too. Only the stages whose
+// name makes the milestone unambiguous are included; ambiguous ones (e.g.
+// "Long Term Nurture", "Timelines Farout" — could apply before or after a
+// call) are deliberately left out rather than guessed at.
+function stageImpliesPhoneHappened(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes('quoted') || n.includes('converted')
+    || (n.includes('no-show') && n.includes('call'))
+    || (n.includes('rescheduled') && n.includes('home'))
+    || (n.includes('lost') && n.includes('phone'));
+}
+function stageImpliesInhomeHappened(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes('quoted') || n.includes('converted')
+    || (n.includes('rescheduled') && n.includes('home'));
+}
+
 // ── Location-level: opportunity counts per stage ─────────────────────────────
 export async function fetchGHLPipelineStats(
   apiKey: string,
@@ -207,18 +227,42 @@ export async function fetchGHLPipelineStats(
   // apart from "GHL refused us" or they overwrite good data with nothing.
   opts: { strict?: boolean } = {}
 ): Promise<PipelineStats> {
-  const allOpps: GHLOpportunity[] = await fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId, opts);
+  const [allOpps, pipelines] = await Promise.all([
+    fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId, opts) as Promise<GHLOpportunity[]>,
+    fetchLocationPipelines(apiKey, locationId),
+  ]);
+  const stages = pipelines.find((p) => p.id === pipelineId)?.stages ?? [];
 
   const count = (stageId?: string) =>
     stageId ? allOpps.filter((o) => o.pipelineStageId === stageId).length : 0;
+
+  // phone/inhome mean "this milestone was ever reached", not "still sitting
+  // there right now" — GHL moves an opportunity's current stage forward as
+  // work continues, so an exact match on the tracked stage id alone
+  // undercounts as soon as someone gets quoted, converted, rescheduled,
+  // marked no-show, or lost. Confirmed live 2026-09-28: in-home ÷ phone was
+  // reporting over 100% for 9 of 11 active clients, because most leads get
+  // moved on right after the call. Reaching "inhome" implies "phone" already
+  // happened, so that's folded in too — callers must no longer sum
+  // phone + inhome for a total (inhome is now a subset of phone).
+  const phoneReached = new Set(
+    [stageIds.phone, stageIds.inhome, ...stages.filter((s) => stageImpliesPhoneHappened(s.name)).map((s) => s.id)]
+      .filter((id): id is string => !!id)
+  );
+  const inhomeReached = new Set(
+    [stageIds.inhome, ...stages.filter((s) => stageImpliesInhomeHappened(s.name)).map((s) => s.id)]
+      .filter((id): id is string => !!id)
+  );
+  const countReached = (stageId: string | undefined, reached: Set<string>) =>
+    stageId ? allOpps.filter((o) => reached.has(o.pipelineStageId)).length : 0;
 
   // Total leads = all opps ever in the pipeline (not just those still in "New Lead" stage)
   return {
     leads: allOpps.length,
     contacted: count(stageIds.contacted),
     unqualified: count(stageIds.unqualified),
-    phone: count(stageIds.phone),
-    inhome: count(stageIds.inhome),
+    phone: countReached(stageIds.phone, phoneReached),
+    inhome: countReached(stageIds.inhome, inhomeReached),
   };
 }
 

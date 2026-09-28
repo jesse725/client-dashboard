@@ -86,7 +86,9 @@ export async function GET(req: Request) {
         db.prepare('UPDATE clients SET cached_leads = ?, cached_inhome = ? WHERE id = ?').run(live.leads, live.inhome, c.id);
       }
       // Contact % = (contacted + any appointment) / total leads
-      const contactedOrAppt = live.contacted + live.phone + live.inhome;
+      // live.phone is cumulative and already includes live.inhome (lib/ghl.ts) —
+      // adding inhome here too would double-count anyone who reached it.
+      const contactedOrAppt = live.contacted + live.phone;
       // When the GHL pull failed only the saved lead / in-home totals exist —
       // contacted and phone are 0 — so a percentage or appointment count built
       // from them would be wrong rather than merely stale. Leave them blank.
@@ -99,8 +101,9 @@ export async function GET(req: Request) {
         meta_stale: live.metaStale, meta_fetched_at: live.metaFetchedAt,
         meta_zero: live.metaZeroSpend && !!c.date_launched && c.date_launched <= new Date().toISOString().slice(0, 10),
         contact_pct: !ghlDown && live.leads > 0 ? (contactedOrAppt / live.leads) * 100 : null,
-        // Appointments = phone + in-home appointments combined
-        appointments: ghlDown ? 0 : live.phone + live.inhome,
+        // Appointments = anyone who ever reached a phone appointment (inhome
+        // is a subset of phone now — see lib/ghl.ts)
+        appointments: ghlDown ? 0 : live.phone,
       };
     } catch (e: any) {
       // Unexpected (not a Meta/GHL API failure — those are handled inside
