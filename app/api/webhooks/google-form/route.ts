@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   // Expected fields from Google Apps Script:
   // business_name, contact_name, contact_email, contact_phone,
-  // address, ein, target_locations
+  // address, ein, target_locations, website_url, ghl_location_id
   const name = (body.business_name ?? body.name ?? '').trim();
   if (!name) return NextResponse.json({ error: 'business_name is required' }, { status: 400 });
 
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     db.prepare(`
       UPDATE clients SET
         contact_name = ?, contact_email = ?, contact_phone = ?,
-        address = ?, ein = ?, target_locations = ?
+        address = ?, ein = ?, target_locations = ?, website_url = ?, ghl_location_id = ?
       WHERE id = ?
     `).run(
       body.contact_name ?? null,
@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
       body.address ?? null,
       body.ein ?? null,
       body.target_locations ?? null,
+      body.website_url ?? null,
+      body.ghl_location_id ?? null,
       (existing as any).id,
     );
     return NextResponse.json({ ok: true, action: 'updated', id: (existing as any).id });
@@ -67,9 +69,9 @@ export async function POST(req: NextRequest) {
 
   const result = db.prepare(`
     INSERT INTO clients
-      (name, slug, contact_name, contact_email, contact_phone, address, ein, target_locations,
+      (name, slug, contact_name, contact_email, contact_phone, address, ein, target_locations, website_url, ghl_location_id,
        retainer_price, ad_spend, daily_ad_spend, start_date, onboard_status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, date('now'), 'pending')
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, date('now'), 'pending')
   `).run(
     name, slug,
     body.contact_name ?? null,
@@ -78,6 +80,12 @@ export async function POST(req: NextRequest) {
     body.address ?? null,
     body.ein ?? null,
     body.target_locations ?? null,
+    body.website_url ?? null,
+    // Already provisioned by the agency's existing GHL automation (visible in the
+    // response sheet's "GHL Location ID" column) — carrying it over here means
+    // "Fetch GHL Stages" in New Client Onboarding can work immediately, without
+    // digging that ID up from somewhere else by hand.
+    body.ghl_location_id ?? null,
   );
 
   return NextResponse.json({ ok: true, action: 'created', id: result.lastInsertRowid }, { status: 201 });

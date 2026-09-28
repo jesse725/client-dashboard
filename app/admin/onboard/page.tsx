@@ -60,6 +60,7 @@ function OnboardPage() {
     address: '',
     ein: '',
     target_locations: '',
+    website_url: '',
     start_date: new Date().toISOString().slice(0, 10),
     date_launched: '',
     retainer_price: '',
@@ -109,11 +110,16 @@ function OnboardPage() {
       address: data.address ?? '',
       ein: data.ein ?? '',
       target_locations: data.target_locations ?? '',
+      website_url: data.website_url ?? '',
+      // Already provisioned by the agency's existing GHL automation, when the
+      // form submission carried it — one less thing to look up by hand before
+      // clicking Fetch Stages.
+      ghl_location_id: data.ghl_location_id ?? f.ghl_location_id,
     }));
   }
 
   function handlePendingSelect(id: string) {
-    if (!id) { setPrefillData(null); setForm(f => ({ ...f, name: '', contact_phone: '', address: '', ein: '', target_locations: '' })); return; }
+    if (!id) { setPrefillData(null); setForm(f => ({ ...f, name: '', contact_phone: '', address: '', ein: '', target_locations: '', website_url: '', ghl_location_id: '' })); return; }
     fetch(`/api/clients/${id}`)
       .then(r => r.json())
       .then(data => applyPrefill(data));
@@ -314,7 +320,7 @@ function OnboardPage() {
             <Link href={`/dashboard/${created.id}`} className="btn-primary flex-1 text-center text-sm py-2.5">
               Open Dashboard
             </Link>
-            <button onClick={() => { setCreated(null); setStep(0); setForm(f => ({ ...f, name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', ein: '', target_locations: '', ghl_api_key: '', ghl_location_id: '' })); }} className="btn-ghost flex-1 text-sm">
+            <button onClick={() => { setCreated(null); setStep(0); setForm(f => ({ ...f, name: '', contact_name: '', contact_email: '', contact_phone: '', address: '', ein: '', target_locations: '', website_url: '', ghl_api_key: '', ghl_location_id: '' })); }} className="btn-ghost flex-1 text-sm">
               Onboard Another Client
             </button>
           </div>
@@ -383,6 +389,10 @@ function OnboardPage() {
                 <div className="col-span-2">
                   <Label optional>Business Address (puts them on the Client Tracker map)</Label>
                   <input className="input" value={form.address} onChange={e => set('address', e.target.value)} placeholder="Street, City, State ZIP" />
+                </div>
+                <div className="col-span-2">
+                  <Label optional>Website</Label>
+                  <input className="input" value={form.website_url} onChange={e => set('website_url', e.target.value)} placeholder="https://…" />
                 </div>
                 <div>
                   <Label>Contract Start Date</Label>

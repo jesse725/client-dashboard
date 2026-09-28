@@ -15,7 +15,8 @@ interface ClientOption { id: number; name: string; ghl_location_id: string | nul
 interface PendingClient {
   id: number; name: string; contact_name: string | null; contact_email: string | null;
   contact_phone: string | null; address: string | null; ein: string | null;
-  target_locations: string | null; created_at: string;
+  target_locations: string | null; website_url: string | null; ghl_location_id: string | null;
+  created_at: string;
 }
 interface SyncLog {
   id: number; started_at: string; finished_at: string | null;
@@ -553,14 +554,18 @@ function onFormSubmit(e) {
     return item ? item.getResponse() : "";
   };
 
+  // Matched against "Merova Media's Onboarding Form"'s actual question titles —
+  // update these if a question gets reworded, or if you're pasting this into a
+  // different form.
   const payload = {
-    business_name:     get("business name"),
-    contact_name:      get("contact name") || get("your name") || get("owner name"),
-    contact_email:     get("email"),
+    business_name:     get("legal business name") || get("business name"),
+    contact_name:      get("full name") || get("contact name") || get("your name") || get("owner name"),
+    contact_email:     get("email"), // "Email" comes before "Email Address" in the form, so this grabs the right one
     contact_phone:     get("phone"),
-    address:           get("address"),
+    address:           get("company address") || get("address"),
     ein:               get("ein") || get("tax id"),
-    target_locations:  get("target location") || get("service area") || get("cities"),
+    target_locations:  get("zip code areas") || get("target location") || get("service area") || get("cities"),
+    website_url:       get("website"),
   };
 
   UrlFetchApp.fetch(WEBHOOK_URL, {
@@ -575,8 +580,11 @@ function onFormSubmit(e) {
                 <p>1. In Google Forms → ⋮ menu → Script editor → paste the code above</p>
                 <p>2. Set <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>WEBHOOK_SECRET</code> to match the <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>WEBHOOK_SECRET</code> env var in Railway</p>
                 <p>3. Click Triggers → Add Trigger → <strong>onFormSubmit</strong> → On form submit → Save</p>
-                <p>4. Update the <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>get()</code> labels to match your exact form question titles</p>
+                <p>4. If you reword a question, update the matching <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>get()</code> line above to match</p>
               </div>
+              <p className="mt-3 text-xs" style={{ color: 'var(--yellow)' }}>
+                ⚠ Without a <code className="px-1 rounded" style={{ background: 'var(--surface-2)' }}>WEBHOOK_SECRET</code> set in Railway, this endpoint accepts requests from anyone who has the URL — confirm it's set (matching the value pasted into the script above) before relying on this.
+              </p>
             </div>
 
             {/* Pending submissions */}
@@ -613,6 +621,8 @@ function onFormSubmit(e) {
                             {p.address && <span style={{ color: 'var(--text-muted)' }}>📍 {p.address}</span>}
                             {p.ein && <span style={{ color: 'var(--text-muted)' }}>🏢 EIN: {p.ein}</span>}
                             {p.target_locations && <span style={{ color: 'var(--text-muted)' }}>🎯 {p.target_locations}</span>}
+                            {p.website_url && <span style={{ color: 'var(--text-muted)' }}>🔗 {p.website_url}</span>}
+                            {p.ghl_location_id && <span style={{ color: 'var(--text-muted)' }} title="Already provisioned by your GHL automation">🔧 GHL: {p.ghl_location_id}</span>}
                           </div>
                           <p className="text-xs pl-9" style={{ color: 'var(--text-muted)' }}>
                             Submitted {new Date(p.created_at).toLocaleString()}

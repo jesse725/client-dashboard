@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
   const result = db.prepare(`
     INSERT INTO clients (
       name, slug, logo_url,
-      contact_name, contact_email, contact_phone, address, ein, target_locations,
+      contact_name, contact_email, contact_phone, address, ein, target_locations, website_url,
       ghl_api_key, ghl_location_id, ghl_pipeline_id,
       stage_leads, stage_contacted, stage_unqualified, stage_phone, stage_inhome,
       retainer_price, ad_spend, daily_ad_spend,
@@ -84,11 +84,11 @@ export async function POST(req: NextRequest) {
       contract_url, slack_url,
       start_date, date_launched, date_billed, rebilling_date, next_checkin,
       share_token, onboard_status
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     body.name, slug, body.logo_url ?? null,
     body.contact_name ?? null, body.contact_email ?? null, body.contact_phone ?? null,
-    body.address ?? null, body.ein ?? null, body.target_locations ?? null,
+    body.address ?? null, body.ein ?? null, body.target_locations ?? null, body.website_url ?? null,
     body.ghl_api_key ?? null, body.ghl_location_id ?? null, pipelineId,
     stageLeads, stageContacted, stageUnqualified, stagePhone, stageInhome,
     body.retainer_price ?? 0, body.ad_spend ?? 0, body.daily_ad_spend ?? 0,

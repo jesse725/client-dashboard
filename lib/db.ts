@@ -215,6 +215,12 @@ function initSchema(db: Database.Database) {
   if (!colNames.includes('ad_account_url')) {
     db.exec('ALTER TABLE clients ADD COLUMN ad_account_url TEXT');
   }
+  // Edit Client has referenced this since it was written (form state includes
+  // `website_url`) but no column, PATCH field, or input for it ever existed —
+  // the field silently did nothing. The onboarding form collects it too.
+  if (!colNames.includes('website_url')) {
+    db.exec('ALTER TABLE clients ADD COLUMN website_url TEXT');
+  }
 
   // Geocoded client addresses for the Client Tracker's area map — one row per
   // client, kept out of the clients table (which is SELECT *-ed all over). `address`
