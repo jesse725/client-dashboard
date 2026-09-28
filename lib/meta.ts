@@ -105,6 +105,27 @@ export function metaWindow(startDate: string | null | undefined, now: Date = new
   return { since, until, clamped };
 }
 
+// The UTC instant that is local midnight, at the start of `dateStr` (YYYY-MM-DD),
+// in IANA zone `tz` — needed when a boundary has to be compared directly against
+// another system's real UTC timestamps (e.g. GHL's `createdAt`), unlike metaWindow's
+// since/until strings above, which Meta itself resolves in the account's timezone
+// and so never need converting to an instant here.
+//
+// Standard trick: format the same UTC instant in `tz` and in UTC, then parse both
+// strings back with the same (unspecified, so timezone-irrelevant) local parser —
+// the difference between the two is exactly tz's offset from UTC at that moment,
+// correct for DST, regardless of what timezone this server happens to run in.
+export function zonedStartOfDay(dateStr: string, tz: string): Date {
+  const guess = new Date(`${dateStr}T00:00:00Z`);
+  try {
+    const asTz = new Date(guess.toLocaleString('en-US', { timeZone: tz }));
+    const asUtc = new Date(guess.toLocaleString('en-US', { timeZone: 'UTC' }));
+    return new Date(guess.getTime() + (asUtc.getTime() - asTz.getTime()));
+  } catch {
+    return guess; // an unrecognised tz name — UTC is the least-wrong fallback
+  }
+}
+
 // ── Requests ────────────────────────────────────────────────────────────────
 // Nothing here used to time out, so one hung Meta call would hang the whole
 // Client Success load (every client is fetched in parallel).

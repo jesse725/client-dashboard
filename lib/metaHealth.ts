@@ -3,7 +3,7 @@ import { attributeLeads } from './adPerformance';
 import { describeMissingGhlConfig, fetchAllOpportunitiesRaw, resolveApiKey } from './ghl';
 import {
   cleanMetaToken, fetchMetaAccountInfo, fetchMetaAdLevelStats, fetchMetaDailyInsights, fetchMetaGrantedPermissions,
-  fetchMetaTokenInfo, looksLikeAdAccountId, metaErrorMessage, metaWindow, normalizeAdAccountId, MetaApiError,
+  fetchMetaTokenInfo, looksLikeAdAccountId, metaErrorMessage, metaWindow, normalizeAdAccountId, zonedStartOfDay, MetaApiError,
   type MetaAccountInfo, type MetaTokenInfo,
 } from './meta';
 import { Client } from '@/types';
@@ -187,9 +187,16 @@ export async function checkLeadTracking(client: Client, agencyKey: string, check
     return;
   }
 
-  // Meta's last_30d is the 30 days ending yesterday (account timezone): compare like with like.
+  // Meta's last_30d is the 30 days ending yesterday, in the AD ACCOUNT'S OWN
+  // timezone — not a fixed offset. This used to stamp metaWindow's LA-calendar-date
+  // STRING (meant only for Meta's own server-side date resolution) with a literal
+  // "Z", silently treating it as a UTC instant instead of an LA one — off by LA's
+  // whole UTC offset (7-8h), and by a further gap on top of that for any account
+  // whose real timezone isn't LA's, which is most of them. Use the account's real
+  // timezone (already read by checkMetaConnection) when it's known.
+  const tz = check.account?.timezone || 'America/Los_Angeles';
   const { until } = metaWindow(null);
-  const end = new Date(`${until}T00:00:00Z`);
+  const end = zonedStartOfDay(until, tz);
   const from = new Date(end.getTime() - 30 * DAY);
   const windowOpps = opps.filter((o) => { const t = new Date(o.createdAt).getTime(); return t >= from.getTime() && t < end.getTime(); });
   const byStatus: Record<string, number> = {};
@@ -233,6 +240,13 @@ export async function checkLeadTracking(client: Client, agencyKey: string, check
   } else if (M === 0) {
     issue('warn', `Meta has recorded 0 leads for $${Math.round(spend30d).toLocaleString()} of spend in the last 30 days${G ? ` (GoHighLevel did receive ${G} new leads in that time)` : ''}. If these ads are meant to generate leads, Meta isn't seeing them — so it can't find more people like them.`,
       'Check the Meta Pixel / Conversions API fires a Lead event when the form is submitted (or that the campaign uses a Meta Instant Form), and that the campaign objective is Leads.');
+  } else if (M > 0 && rec.totalLeads === 0) {
+    // Distinct from "some leads are getting lost" below: this pipeline has never
+    // received a single opportunity, ever — not a leak, a disconnected pipe. Most
+    // often the wrong pipeline is configured (leads are landing somewhere else in
+    // the same GHL location) rather than the integration failing lead-by-lead.
+    issue('error', `This pipeline has never had a single opportunity in it, despite Meta counting ${M} leads in the last 30 days alone — this isn't leads trickling through with some loss, it's nothing arriving at all.`,
+      `Open location ${client.ghl_location_id} in GoHighLevel and check pipeline ${client.ghl_pipeline_id} is really the one Facebook leads land in — a different (often the default) pipeline in the same location is the usual cause. Also check Settings → Integrations → Facebook is connected.`);
   } else if (M >= 5 && G < 0.7 * M) {
     issue('error', `Meta counted ${M} leads in the last 30 days but only ${G} new leads reached GoHighLevel — roughly ${M - G} are getting lost on the way in.`,
       'In GoHighLevel open Settings → Integrations → Facebook and reconnect it if it shows expired; make sure every lead form is mapped to a workflow that creates an opportunity in this pipeline; and look for contacts that arrived without an opportunity.');
