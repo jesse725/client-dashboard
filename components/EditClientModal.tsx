@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Client } from '@/types';
-import { X, Link2, Copy, Check, Trash2 } from 'lucide-react';
+import { X, Link2, Copy, Check, Trash2, Search, Loader2, CheckCircle } from 'lucide-react';
 import MetaConnectionTest from './MetaConnectionTest';
 
 interface Props {
@@ -10,6 +10,9 @@ interface Props {
   onClose: () => void;
   onSaved: (c: Client) => void;
 }
+
+interface GhlStage { id: string; name: string; position: number }
+interface GhlPipeline { id: string; name: string; stages: GhlStage[] }
 
 function Label({ children }: { children: React.ReactNode }) {
   return <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>{children}</label>;
@@ -59,11 +62,61 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
   const [generatingToken, setGeneratingToken] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [fetchingStages, setFetchingStages] = useState(false);
+  const [pipelines, setPipelines] = useState<GhlPipeline[]>([]);
+  const [stageError, setStageError] = useState('');
+
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Mirrors onboarding's "Fetch Stages" (app/admin/onboard/page.tsx), but for an
+  // EXISTING client: resolves the API key server-side and reads whatever
+  // Location ID/API key are currently typed here, even if not saved yet. This
+  // is the fix for a real incident — StroTek's pipeline ID pointed at the wrong
+  // pipeline for months because this modal had no way to verify an ID against
+  // real GHL data, only raw text boxes.
+  async function fetchGHLStages() {
+    if (!form.ghl_location_id) {
+      setStageError('Enter a Location ID first.');
+      return;
+    }
+    setFetchingStages(true);
+    setStageError('');
+    setPipelines([]);
+    try {
+      const qs = new URLSearchParams();
+      qs.set('locationId', form.ghl_location_id);
+      if (form.ghl_api_key) qs.set('apiKey', form.ghl_api_key);
+      const res = await fetch(`/api/clients/${client.id}/ghl/pipelines?${qs.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch stages.');
+      const fetched: GhlPipeline[] = data.pipelines;
+      setPipelines(fetched);
+
+      // Prefer the pipeline already saved if it's one of these; otherwise fall
+      // back to the first, same as onboarding.
+      const match = fetched.find((p) => p.id === form.ghl_pipeline_id) ?? fetched[0];
+      if (match) {
+        const updates: Record<string, string> = { ghl_pipeline_id: match.id };
+        for (const s of match.stages) {
+          const n = s.name.toLowerCase();
+          if (!updates.stage_leads && (n.includes('new lead') || n.includes('new prospect') || n === 'lead')) updates.stage_leads = s.id;
+          if (!updates.stage_contacted && (n.includes('contact') || n.includes('respond'))) updates.stage_contacted = s.id;
+          if (!updates.stage_phone && (n.includes('phone') || n.includes('call') || n.includes('discovery'))) updates.stage_phone = s.id;
+          if (!updates.stage_inhome && (n.includes('home') || n.includes('in person') || n.includes('quote') || n.includes('site'))) updates.stage_inhome = s.id;
+          if (!updates.stage_unqualified && (n.includes('unqualified') || n.includes('disqualified') || n.includes('not a fit'))) updates.stage_unqualified = s.id;
+        }
+        setForm((f) => ({ ...f, ...updates }));
+      }
+    } catch (e: any) {
+      setStageError(e.message || 'Failed to fetch stages. Check the Location ID and API key.');
+    }
+    setFetchingStages(false);
+  }
 
   const shareUrl = shareToken
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/c/${shareToken}`
     : null;
+  const selectedPipeline = pipelines.find((p) => p.id === form.ghl_pipeline_id);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -242,34 +295,58 @@ export default function EditClientModal({ client, onClose, onSaved }: Props) {
               <Label>GHL API Key (sub-account or leave blank for agency key)</Label>
               <input className="input" value={form.ghl_api_key} onChange={(e) => set('ghl_api_key', e.target.value)} placeholder="pit-…" />
             </div>
-            <div>
+            <div className="col-span-2">
               <Label>Location ID</Label>
-              <input className="input" value={form.ghl_location_id} onChange={(e) => set('ghl_location_id', e.target.value)} />
+              <div className="flex gap-2">
+                <input className="input flex-1" value={form.ghl_location_id} onChange={(e) => set('ghl_location_id', e.target.value)} />
+                <button
+                  type="button"
+                  onClick={fetchGHLStages}
+                  disabled={fetchingStages || !form.ghl_location_id}
+                  className="btn-primary flex items-center gap-2 shrink-0"
+                >
+                  {fetchingStages ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                  {fetchingStages ? 'Fetching…' : 'Fetch Stages'}
+                </button>
+              </div>
+              {stageError && <p className="text-xs mt-1.5" style={{ color: 'var(--red)' }}>{stageError}</p>}
+              {pipelines.length > 0 && !stageError && (
+                <p className="text-xs mt-1.5 flex items-center gap-1.5" style={{ color: 'var(--green)' }}>
+                  <CheckCircle size={12} /> Found {pipelines.length} pipeline{pipelines.length === 1 ? '' : 's'} in this location — verify the picks below against real GHL names.
+                </p>
+              )}
             </div>
             <div>
-              <Label>Pipeline ID</Label>
-              <input className="input" value={form.ghl_pipeline_id} onChange={(e) => set('ghl_pipeline_id', e.target.value)} />
+              <Label>Pipeline ID {pipelines.length > 0 && <span className="font-normal opacity-70">(pick by name)</span>}</Label>
+              {pipelines.length > 0 ? (
+                <select className="input" value={form.ghl_pipeline_id} onChange={(e) => set('ghl_pipeline_id', e.target.value)}>
+                  <option value="">— select —</option>
+                  {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              ) : (
+                <input className="input" value={form.ghl_pipeline_id} onChange={(e) => set('ghl_pipeline_id', e.target.value)} />
+              )}
             </div>
-            <div>
-              <Label>Stage — New Lead</Label>
-              <input className="input" value={form.stage_leads} onChange={(e) => set('stage_leads', e.target.value)} />
-            </div>
-            <div>
-              <Label>Stage — Contacted</Label>
-              <input className="input" value={form.stage_contacted} onChange={(e) => set('stage_contacted', e.target.value)} />
-            </div>
-            <div>
-              <Label>Stage — Booked Phone</Label>
-              <input className="input" value={form.stage_phone} onChange={(e) => set('stage_phone', e.target.value)} />
-            </div>
-            <div>
-              <Label>Stage — Booked In-Home</Label>
-              <input className="input" value={form.stage_inhome} onChange={(e) => set('stage_inhome', e.target.value)} />
-            </div>
-            <div>
-              <Label>Stage — Unqualified</Label>
-              <input className="input" value={form.stage_unqualified} onChange={(e) => set('stage_unqualified', e.target.value)} />
-            </div>
+            <div />
+            {[
+              { key: 'stage_leads', label: 'New Lead' },
+              { key: 'stage_contacted', label: 'Contacted' },
+              { key: 'stage_phone', label: 'Booked Phone' },
+              { key: 'stage_inhome', label: 'Booked In-Home' },
+              { key: 'stage_unqualified', label: 'Unqualified' },
+            ].map(({ key, label }) => (
+              <div key={key}>
+                <Label>Stage — {label}</Label>
+                {selectedPipeline ? (
+                  <select className="input" value={(form as any)[key]} onChange={(e) => set(key, e.target.value)}>
+                    <option value="">— not mapped —</option>
+                    {selectedPipeline.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                ) : (
+                  <input className="input" value={(form as any)[key]} onChange={(e) => set(key, e.target.value)} />
+                )}
+              </div>
+            ))}
           </div>
 
           <button type="submit" className="btn-primary w-full" disabled={saving}>
