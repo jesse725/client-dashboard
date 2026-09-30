@@ -225,25 +225,18 @@ function stageIsNoShow(name: string): boolean {
   return n.includes('no-show') || n.includes('no show');
 }
 
-// ── Location-level: opportunity counts per stage ─────────────────────────────
-export async function fetchGHLPipelineStats(
-  apiKey: string,
-  locationId: string,
-  pipelineId: string,
-  stageIds: { leads?: string; contacted?: string; unqualified?: string; phone?: string; inhome?: string },
-  // strict: throw on a failed GHL call instead of returning zeros — callers
-  // that persist the result (the cached lead counts) need to tell "0 leads"
-  // apart from "GHL refused us" or they overwrite good data with nothing.
-  opts: { strict?: boolean } = {}
-): Promise<PipelineStats> {
-  const [allOpps, pipelines] = await Promise.all([
-    fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId, opts) as Promise<GHLOpportunity[]>,
-    fetchLocationPipelines(apiKey, locationId),
-  ]);
-  const stages = pipelines.find((p) => p.id === pipelineId)?.stages ?? [];
-
+// The actual stage-counting logic, pulled out of fetchGHLPipelineStats so it
+// can run against an arbitrary (e.g. date-windowed) subset of opportunities —
+// the Activity Log's 3/7/30-day snapshots need the exact same phone/inhome/
+// no-show classification this file already maintains, not a second copy that
+// could quietly drift from it.
+export function computeStageBreakdown(
+  opps: { pipelineStageId: string }[],
+  stages: GHLStage[],
+  stageIds: { leads?: string; contacted?: string; unqualified?: string; phone?: string; inhome?: string }
+): PipelineStats {
   const count = (stageId?: string) =>
-    stageId ? allOpps.filter((o) => o.pipelineStageId === stageId).length : 0;
+    stageId ? opps.filter((o) => o.pipelineStageId === stageId).length : 0;
 
   // phone/inhome mean "this milestone was ever reached", not "still sitting
   // there right now" — GHL moves an opportunity's current stage forward as
@@ -263,20 +256,39 @@ export async function fetchGHLPipelineStats(
       .filter((id): id is string => !!id)
   );
   const countReached = (stageId: string | undefined, reached: Set<string>) =>
-    stageId ? allOpps.filter((o) => reached.has(o.pipelineStageId)).length : 0;
+    stageId ? opps.filter((o) => reached.has(o.pipelineStageId)).length : 0;
 
   const noShowStageIds = new Set(stages.filter((s) => stageIsNoShow(s.name)).map((s) => s.id));
-  const noShow = allOpps.filter((o) => noShowStageIds.has(o.pipelineStageId)).length;
+  const noShow = opps.filter((o) => noShowStageIds.has(o.pipelineStageId)).length;
 
-  // Total leads = all opps ever in the pipeline (not just those still in "New Lead" stage)
+  // Total leads = all opps in the set (not just those still in "New Lead" stage)
   return {
-    leads: allOpps.length,
+    leads: opps.length,
     contacted: count(stageIds.contacted),
     unqualified: count(stageIds.unqualified),
     phone: countReached(stageIds.phone, phoneReached),
     inhome: countReached(stageIds.inhome, inhomeReached),
     noShow,
   };
+}
+
+// ── Location-level: opportunity counts per stage ─────────────────────────────
+export async function fetchGHLPipelineStats(
+  apiKey: string,
+  locationId: string,
+  pipelineId: string,
+  stageIds: { leads?: string; contacted?: string; unqualified?: string; phone?: string; inhome?: string },
+  // strict: throw on a failed GHL call instead of returning zeros — callers
+  // that persist the result (the cached lead counts) need to tell "0 leads"
+  // apart from "GHL refused us" or they overwrite good data with nothing.
+  opts: { strict?: boolean } = {}
+): Promise<PipelineStats> {
+  const [allOpps, pipelines] = await Promise.all([
+    fetchAllOpportunitiesRaw(apiKey, locationId, pipelineId, opts) as Promise<GHLOpportunity[]>,
+    fetchLocationPipelines(apiKey, locationId),
+  ]);
+  const stages = pipelines.find((p) => p.id === pipelineId)?.stages ?? [];
+  return computeStageBreakdown(allOpps, stages, stageIds);
 }
 
 export interface GHLOpportunityRaw {

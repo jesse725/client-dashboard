@@ -157,3 +157,18 @@ export async function requireEmployeeAccess(): Promise<
   }
   return { ok: true, employeeId: Number(user.employeeId) };
 }
+
+// Guard for the Activity Log's buyer-facing routes. Broader than
+// requireEmployeeAccess: any admin may create/edit a log too (covering for
+// the buyer, or Jesse adjusting a draft), not just the one linked employee —
+// this isn't "my own payroll," there's no data to leak between admins here.
+export async function requireActivityLogAccess(): Promise<
+  { ok: true; employeeId: number | null; name: string } | { ok: false; response: NextResponse }
+> {
+  const session = await getServerSession(authOptions);
+  const user = session?.user as any;
+  if (!session || (!user?.employeeId && user?.role !== 'admin')) {
+    return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
+  }
+  return { ok: true, employeeId: user.employeeId ? Number(user.employeeId) : null, name: user.name ?? user.email };
+}

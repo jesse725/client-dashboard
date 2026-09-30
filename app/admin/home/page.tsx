@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BarChart2, TrendingUp, Plus, Settings2, DollarSign, Users, BookUser, Wallet } from 'lucide-react';
+import { BarChart2, TrendingUp, Plus, Settings2, DollarSign, Users, BookUser, Wallet, ClipboardList } from 'lucide-react';
 
 export default function AdminHomePage() {
   const { data: session, status } = useSession();
@@ -37,6 +37,13 @@ export default function AdminHomePage() {
       desc: 'Set up a new client account, GHL connection & billing details',
       icon: <Plus size={22} />,
       color: 'var(--yellow)',
+    },
+    {
+      href: '/admin/activity-log',
+      title: 'Activity Log',
+      desc: 'Media buyer\'s Mon/Wed/Fri campaign reviews — snapshots, actions & health per client',
+      icon: <ClipboardList size={22} />,
+      color: '#38bdf8',
     },
     // Shown whenever this login is linked to an employee record (lib/db.ts's
     // linked_user_id) — independent of canViewFinancials, since seeing your

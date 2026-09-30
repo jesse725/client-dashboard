@@ -399,6 +399,84 @@ function initSchema(db: Database.Database) {
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(employee_id, client_id)
     );
+
+    -- Media Buyer Activity Log: a permanent record of what the buyer saw and
+    -- did for each client, 3x/week. activity_log_metric_snapshots is written
+    -- exactly once (when a client is added to the log) and never touched
+    -- again by anything, locked or not — that's the whole immutability
+    -- guarantee, not a flag that could be bypassed later.
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER REFERENCES employees(id),
+      media_buyer_name TEXT NOT NULL,
+      log_date TEXT NOT NULL,
+      day_of_week TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','submitted')),
+      started_at TEXT DEFAULT (datetime('now')),
+      submitted_at TEXT,
+      overall_performance TEXT,
+      biggest_priorities TEXT,
+      creative_testing_plan TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(employee_id, log_date)
+    );
+
+    -- client_id is SET NULL (not CASCADE) on client deletion — a client being
+    -- removed from the live roster must never erase historical log entries;
+    -- client_name is the permanent record of who this was.
+    CREATE TABLE IF NOT EXISTS activity_log_clients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_log_id INTEGER NOT NULL REFERENCES activity_logs(id) ON DELETE CASCADE,
+      client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+      client_name TEXT NOT NULL,
+      review_status TEXT NOT NULL DEFAULT 'in_progress' CHECK(review_status IN ('in_progress','locked','skipped')),
+      campaign_health TEXT CHECK(campaign_health IN ('healthy','needs_attention','action_required')),
+      observation TEXT,
+      skip_reason TEXT,
+      snapshot_taken_at TEXT,
+      locked_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(activity_log_id, client_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_log_metric_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_log_client_id INTEGER NOT NULL REFERENCES activity_log_clients(id) ON DELETE CASCADE,
+      window_days INTEGER NOT NULL,
+      spend REAL NOT NULL DEFAULT 0,
+      leads INTEGER NOT NULL DEFAULT 0,
+      cpl REAL,
+      appointments INTEGER NOT NULL DEFAULT 0,
+      cost_per_appointment REAL,
+      booking_rate REAL,
+      ctr REAL,
+      cpc REAL,
+      cpm REAL,
+      frequency REAL,
+      UNIQUE(activity_log_client_id, window_days)
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_log_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_log_client_id INTEGER NOT NULL REFERENCES activity_log_clients(id) ON DELETE CASCADE,
+      action_type TEXT NOT NULL,
+      action_taken TEXT NOT NULL,
+      reason TEXT,
+      expected_result TEXT,
+      follow_up_date TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Every admin unlock of an already-locked client review is recorded here
+    -- permanently — the unlock itself is never silent, even though it isn't
+    -- shown inline in the log.
+    CREATE TABLE IF NOT EXISTS activity_log_unlock_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_log_client_id INTEGER NOT NULL REFERENCES activity_log_clients(id) ON DELETE CASCADE,
+      unlocked_by TEXT NOT NULL,
+      unlocked_at TEXT DEFAULT (datetime('now')),
+      reason TEXT
+    );
   `);
 
   // Migrations for employees table — must run after the block above, since

@@ -8,7 +8,7 @@ import {
   DollarSign, TrendingUp, Users, Star, Phone, AlertTriangle, Target,
   CheckCircle, Clock, XCircle, ChevronRight, Plus, Minus,
   Home, BarChart2, Pause, PhoneCall, X, RefreshCw,
-  Smile, Meh, Frown, Table2, Kanban, Calendar, MapPin, Activity,
+  Smile, Meh, Frown, Table2, Kanban, Calendar, MapPin, Activity, ClipboardList,
 } from 'lucide-react';
 import CallNotesSection from '@/components/CallNotesSection';
 import MetaHealthView from '@/components/MetaHealthView';
@@ -783,6 +783,86 @@ function InternalView({ clients }: { clients: ClientRow[] }) {
   );
 }
 
+// ── Media Buyer summary (owner view of the Activity Log) ─────────────────────
+interface SummaryRow { clientId: number; clientName: string; health: 'healthy' | 'needs_attention' | 'action_required' | null; lastReview: string | null; lastAction: string | null; }
+const HEALTH_DISPLAY: Record<string, { emoji: string; label: string; color: string }> = {
+  healthy: { emoji: '🟢', label: 'Healthy', color: 'var(--green)' },
+  needs_attention: { emoji: '🟡', label: 'Needs Attention', color: 'var(--yellow)' },
+  action_required: { emoji: '🔴', label: 'Action Required', color: 'var(--red)' },
+};
+
+function MediaBuyerSummary() {
+  const [rows, setRows] = useState<SummaryRow[]>([]);
+  const [counts, setCounts] = useState({ healthy: 0, needsAttention: 0, actionRequired: 0, notReviewed: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/admin/activity-log/management-summary').then(r => r.json()).then(data => {
+      setRows(data.rows); setCounts(data.counts); setLoading(false);
+    });
+  }, []);
+
+  if (loading) return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Latest campaign health from the media buyer's Activity Log</p>
+        <Link href="/admin/activity-log" className="btn-ghost text-sm flex items-center gap-1.5">
+          <ClipboardList size={13} /> Open Activity Log
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Healthy Accounts', value: counts.healthy, color: 'var(--green)' },
+          { label: 'Needs Attention', value: counts.needsAttention, color: 'var(--yellow)' },
+          { label: 'Action Required', value: counts.actionRequired, color: 'var(--red)' },
+          { label: 'Not Reviewed', value: counts.notReviewed, color: 'var(--text-muted)' },
+        ].map(s => (
+          <div key={s.label} className="card px-4 py-4">
+            <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
+            <p className="font-bold text-2xl" style={{ color: s.color }}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+              {['Client', 'Health', 'Last Review', 'Last Action'].map(h => (
+                <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const h = r.health ? HEALTH_DISPLAY[r.health] : null;
+              return (
+                <tr key={r.clientId} className="hover:bg-[var(--surface-2)] cursor-pointer transition-colors"
+                  style={{
+                    borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
+                    background: r.health === 'action_required' ? 'rgba(239,68,68,0.06)' : r.health === 'needs_attention' ? 'rgba(245,158,11,0.06)' : undefined,
+                  }}>
+                  <td className="px-4 py-3 font-medium">
+                    <Link href={`/admin/activity-log/client/${r.clientId}`} className="hover:underline">{r.clientName}</Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    {h ? <span className="font-semibold" style={{ color: h.color }}>{h.emoji} {h.label}</span> : <span style={{ color: 'var(--text-muted)' }}>— Not Reviewed</span>}
+                  </td>
+                  <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{r.lastReview ?? '—'}</td>
+                  <td className="px-4 py-3" style={{ color: 'var(--text-muted)' }}>{r.lastAction ?? '—'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TrackerPage() {
   const { data: session, status } = useSession();
@@ -792,7 +872,7 @@ export default function TrackerPage() {
   const [loading, setLoading] = useState(true);
   const [dragging, setDragging] = useState<number | null>(null);
   const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
-  const [view, setView] = useState<'overview' | 'kanban' | 'map' | 'meta' | 'months' | 'internal'>('overview');
+  const [view, setView] = useState<'overview' | 'kanban' | 'map' | 'meta' | 'months' | 'internal' | 'activitylog'>('overview');
   const [ghlOpps, setGhlOpps] = useState<any[]>([]);
   const [syncing, setSyncing] = useState(false);
   // Why the page might be missing data — previously a failed load just rendered
@@ -908,6 +988,7 @@ export default function TrackerPage() {
               { key: 'meta',      label: 'Meta Health', icon: <Activity size={13} /> },
               { key: 'months',    label: 'Months',    icon: <Calendar size={13} /> },
               { key: 'internal',  label: 'Internal',  icon: <DollarSign size={13} /> },
+              { key: 'activitylog', label: 'Media Buyer', icon: <ClipboardList size={13} /> },
             ] as const).map(v => (
               <button key={v.key} onClick={() => setView(v.key)}
                 className="px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all"
@@ -936,6 +1017,8 @@ export default function TrackerPage() {
         {view === 'months' && <MonthView clients={clients} onSelect={setSelectedClient} />}
 
         {view === 'internal' && <InternalView clients={clients} />}
+
+        {view === 'activitylog' && <MediaBuyerSummary />}
 
         {/* ── Journey / Kanban ─────────────────────────────────────── */}
         {view === 'kanban' && (
