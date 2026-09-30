@@ -221,6 +221,36 @@ function initSchema(db: Database.Database) {
   if (!colNames.includes('website_url')) {
     db.exec('ALTER TABLE clients ADD COLUMN website_url TEXT');
   }
+  // Durable "months confirmed paid" — client_status (the kanban stage) has no
+  // history, so once a card moves to Churned the "Month 3" information is
+  // gone. This is set (never reset) whenever client_status is written as
+  // "Month N" (app/api/admin/overview/route.ts's PATCH), and left alone on
+  // every other transition — including Churned — so LTV (retainer_price ×
+  // months_paid) survives a client churning instead of dropping to 0.
+  if (!colNames.includes('months_paid')) {
+    db.exec('ALTER TABLE clients ADD COLUMN months_paid INTEGER NOT NULL DEFAULT 0');
+    // Backfill clients already sitting at a Month-N stage, so existing
+    // clients don't show $0 LTV until their card is next dragged. SQLite's
+    // numeric CAST stops at the first non-digit, so 'Month 3+' -> 3.
+    db.exec(`
+      UPDATE clients SET months_paid = CAST(substr(client_status, 7) AS INTEGER)
+      WHERE client_status GLOB 'Month [0-9]*'
+    `);
+  }
+  // When a client's status is set to exactly 'Churned', set to today's date;
+  // cleared back to NULL if ever moved off Churned. Paired with start_date,
+  // these are the only two anchors churn/retention rate are computed from
+  // (see lib/income.ts) — no month-by-month snapshot history exists anywhere
+  // in this app, so this is deliberately the minimum needed to make "churn
+  // rate for month X" answerable without one.
+  if (!colNames.includes('churned_at')) {
+    db.exec('ALTER TABLE clients ADD COLUMN churned_at TEXT');
+    // One-time backfill for clients already churned: dated "today" since the
+    // real churn date isn't recoverable. Real, disclosed limitation — their
+    // churn will land in whatever month this migration runs in, not when
+    // they actually left. Every churn from here forward is dated exactly.
+    db.exec(`UPDATE clients SET churned_at = date('now') WHERE client_status = 'Churned'`);
+  }
 
   // Geocoded client addresses for the Client Tracker's area map — one row per
   // client, kept out of the clients table (which is SELECT *-ed all over). `address`
@@ -314,7 +344,7 @@ function initSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS income_monthly_overrides (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       month TEXT NOT NULL,
-      field TEXT NOT NULL CHECK(field IN ('revenue','adSpend')),
+      field TEXT NOT NULL CHECK(field IN ('revenue','adSpend','payroll','totalOperatingExpenses')),
       amount REAL NOT NULL DEFAULT 0,
       UNIQUE(month, field)
     );
@@ -528,6 +558,30 @@ function initSchema(db: Database.Database) {
     WHERE role != 'CSM' AND client_onboard_launch_bonus = 100 AND client_management_monthly_fee = 150
   `);
 
+  // income_monthly_overrides.field's CHECK constraint originally only allowed
+  // ('revenue','adSpend') — widening it to also allow manual monthly Payroll
+  // and Total Operating Expenses overrides needs a real table rebuild, since
+  // SQLite has no ALTER TABLE for a CHECK constraint. Guarded by inspecting
+  // the table's own stored SQL so this only runs once, ever.
+  const overridesSql = (db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'income_monthly_overrides'`
+  ).get() as any)?.sql ?? '';
+  if (overridesSql && !overridesSql.includes('payroll')) {
+    db.exec(`
+      ALTER TABLE income_monthly_overrides RENAME TO income_monthly_overrides_old;
+      CREATE TABLE income_monthly_overrides (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        month TEXT NOT NULL,
+        field TEXT NOT NULL CHECK(field IN ('revenue','adSpend','payroll','totalOperatingExpenses')),
+        amount REAL NOT NULL DEFAULT 0,
+        UNIQUE(month, field)
+      );
+      INSERT INTO income_monthly_overrides (id, month, field, amount)
+        SELECT id, month, field, amount FROM income_monthly_overrides_old;
+      DROP TABLE income_monthly_overrides_old;
+    `);
+  }
+
   seedPayrollData(db);
   seedIncomeData(db);
 
@@ -601,17 +655,6 @@ function seedPayrollData(db: Database.Database) {
 // One-time seed from the Merova Media Income Tracker spreadsheet (cycle start Jul-2026).
 // Only runs if the tables are still empty, so it never overwrites real edits.
 function seedIncomeData(db: Database.Database) {
-  const fundCount = (db.prepare('SELECT COUNT(*) AS c FROM startup_funds').get() as any).c;
-  if (fundCount === 0) {
-    db.prepare("INSERT INTO startup_funds (name, allocated, notes) VALUES ('Course Fund', 2500, 'One-time course purchase, seeded from startup capital')").run();
-    db.prepare("INSERT INTO startup_funds (name, allocated, notes) VALUES ('Ad Spend Fund', 5000, 'Draw down as ad spend is logged against this fund')").run();
-
-    const courseFund = db.prepare("SELECT id FROM startup_funds WHERE name = 'Course Fund'").get() as any;
-    db.prepare(
-      "INSERT INTO expense_entries (name, category, fund_id, amount, date, notes) VALUES ('Course', 'startup_fund', ?, 2500, '2026-07-01', 'Seeded from spreadsheet')"
-    ).run(courseFund.id);
-  }
-
   const itemCount = (db.prepare('SELECT COUNT(*) AS c FROM expense_items').get() as any).c;
   if (itemCount === 0) {
     const subscriptions: [string, number][] = [

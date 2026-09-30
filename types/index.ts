@@ -29,6 +29,14 @@ export interface Client {
   share_token: string | null;
   cached_leads: number;
   cached_inhome: number;
+  // How many months of retainer this client has confirmed paid — set when
+  // client_status (the Tracker's kanban stage) is moved to "Month N", and
+  // otherwise left alone (including on Churned), so LTV survives churn.
+  months_paid: number;
+  // Set the moment client_status becomes exactly 'Churned'; cleared if moved
+  // off it. Paired with start_date, the only two anchors churn/retention
+  // rate are computed from — see lib/income.ts.
+  churned_at: string | null;
   created_at: string;
 }
 

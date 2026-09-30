@@ -134,18 +134,20 @@ function SourceBadge({ source }: { source: 'live' | 'manual' | 'unavailable' }) 
   );
 }
 
-// Revenue/Ad Spend row — live Whop/Meta value by default, click the pencil to
-// override a specific month; "revert" clears the override back to live.
-function EditableAmountRow({ label, amount, source, sub, onSave, onRevert, color }: {
+// Revenue/Ad Spend/Payroll/Total OpEx row — live or computed value by
+// default, click the pencil to override a specific month; "revert" clears
+// the override back to live/computed.
+function EditableAmountRow({ label, amount, source, sub, onSave, onRevert, color, emphasize }: {
   label: string; amount: number; source: 'live' | 'manual' | 'unavailable'; sub?: string;
-  onSave: (amount: number) => void; onRevert: () => void; color?: string;
+  onSave: (amount: number) => void; onRevert: () => void; color?: string; emphasize?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(String(amount));
+  const emphasizeStyle = emphasize ? { borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 } : {};
 
   if (editing) {
     return (
-      <div className="px-4 py-2.5 flex items-center justify-between gap-2">
+      <div className="px-4 py-2.5 flex items-center justify-between gap-2" style={emphasizeStyle}>
         <span className="font-semibold">{label}</span>
         <div className="flex items-center gap-1.5">
           <input
@@ -161,7 +163,7 @@ function EditableAmountRow({ label, amount, source, sub, onSave, onRevert, color
   }
 
   return (
-    <div className="px-4 py-2.5 flex items-center justify-between">
+    <div className="px-4 py-2.5 flex items-center justify-between" style={emphasizeStyle}>
       <div>
         <span className="font-semibold">{label}</span>
         {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
@@ -169,7 +171,7 @@ function EditableAmountRow({ label, amount, source, sub, onSave, onRevert, color
       <div className="flex items-center gap-2">
         <SourceBadge source={source} />
         {source === 'manual' && (
-          <button onClick={onRevert} title="Revert to live" className="opacity-50 hover:opacity-100"><RotateCcw size={12} /></button>
+          <button onClick={onRevert} title="Revert to live/computed" className="opacity-50 hover:opacity-100"><RotateCcw size={12} /></button>
         )}
         <span className="font-bold" style={{ color }}>{fmt$(amount)}</span>
         <button onClick={() => { setValue(String(amount)); setEditing(true); }} className="opacity-50 hover:opacity-100"><Pencil size={12} /></button>
@@ -192,7 +194,7 @@ function OverviewView() {
   if (loading) return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>;
   if (!data || data.error) return <p className="text-sm" style={{ color: 'var(--red)' }}>{data?.error || 'Failed to load'}</p>;
 
-  const { months, ytd, startupFunds, warnings } = data;
+  const { months, ytd, warnings } = data;
 
   // Group months by year — a flat list today, ready to fold into per-year
   // cards once there's more than one year of history.
@@ -209,37 +211,14 @@ function OverviewView() {
 
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Cumulative (All-Time, USD)</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
           <StatCard label="Total Revenue" value={fmt$(ytd.revenue)} color="#6c63ff" icon={<DollarSign size={16} />} />
           <StatCard label="Total Ad Spend" value={fmt$(ytd.adSpend)} color="#f59e0b" icon={<TrendingDown size={16} />} />
           <StatCard label="Cumulative Profit" value={fmt$(ytd.netProfit)} color={ytd.netProfit >= 0 ? 'var(--green)' : 'var(--red)'} icon={<Wallet size={16} />} />
           <StatCard label="Overall Margin" value={ytd.overallMarginPct != null ? pct(ytd.overallMarginPct) : '—'} color="#16a34a" icon={<Layers size={16} />} />
           <StatCard label="Profitability Ratio" value={ytd.profitabilityRatio != null ? `${ytd.profitabilityRatio.toFixed(2)}x` : '—'} color="#0d9488" icon={<Scale size={16} />} sub="revenue per $1 of total cost" />
           <StatCard label="Avg ROAS" value={ytd.avgRoas != null ? `${ytd.avgRoas.toFixed(2)}x` : '—'} color="#8b5cf6" icon={<TrendingUp size={16} />} />
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Startup Fund Status</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {startupFunds.map((f: any) => (
-            <div key={f.id} className="card p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-sm">{f.name}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                  {pct(f.pctUtilized * 100)} utilized
-                </span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden mb-3" style={{ background: 'var(--surface-2)' }}>
-                <div className="h-full" style={{ width: `${Math.min(100, f.pctUtilized * 100)}%`, background: 'var(--accent)' }} />
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div><p style={{ color: 'var(--text-muted)' }}>Allocated</p><p className="font-semibold">{fmt$(f.allocated)}</p></div>
-                <div><p style={{ color: 'var(--text-muted)' }}>Spent</p><p className="font-semibold">{fmt$(f.spent)}</p></div>
-                <div><p style={{ color: 'var(--text-muted)' }}>Remaining</p><p className="font-semibold" style={{ color: 'var(--green)' }}>{fmt$(f.remaining)}</p></div>
-              </div>
-            </div>
-          ))}
+          <StatCard label="Client LTV" value={fmt$(ytd.clientLtvTotal)} color="#e879f9" icon={<Users size={16} />} sub="retainer × confirmed months paid" />
         </div>
       </div>
 
@@ -291,11 +270,12 @@ function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defa
   const [expanded, setExpanded] = useState(!!defaultExpanded);
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [showAddEntry, setShowAddEntry] = useState<'other' | 'startup_fund' | null>(null);
+  const [showAddEntry, setShowAddEntry] = useState<'other' | null>(null);
   // Derived fresh every render — never cached in local state, so a carry-forward
   // ripple from editing a DIFFERENT month (which refreshes `month` via the
   // parent's summary refetch) is never masked by a stale snapshot here.
   const pnl = detail?.pnl ?? month;
+  const churn = detail?.churnRetention ?? month.churnRetention;
 
   const loadDetail = useCallback(() => {
     setLoadingDetail(true);
@@ -319,7 +299,7 @@ function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defa
     onEntryChange();
   };
 
-  const setOverride = async (field: 'revenue' | 'adSpend', amount: number) => {
+  const setOverride = async (field: 'revenue' | 'adSpend' | 'payroll' | 'totalOperatingExpenses', amount: number) => {
     await fetch('/api/admin/income/monthly-override', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ month: month.month, field, amount }),
@@ -327,7 +307,7 @@ function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defa
     loadDetail();
     onEntryChange();
   };
-  const revertOverride = async (field: 'revenue' | 'adSpend') => {
+  const revertOverride = async (field: 'revenue' | 'adSpend' | 'payroll' | 'totalOperatingExpenses') => {
     await fetch(`/api/admin/income/monthly-override?month=${month.month}&field=${field}`, { method: 'DELETE' });
     loadDetail();
     onEntryChange();
@@ -356,8 +336,8 @@ function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defa
             <div className="py-2 text-sm">
               <SectionLabel first>Revenue</SectionLabel>
               <EditableAmountRow
-                label="Net Revenue (Whop)" amount={pnl.revenue} source={pnl.revenueSource}
-                sub="net, from Whop — Whop's own fee already deducted"
+                label="Monthly Revenue" amount={pnl.revenue} source={pnl.revenueSource}
+                sub="entered manually — not synced from Whop or anywhere else"
                 onSave={v => setOverride('revenue', v)} onRevert={() => revertOverride('revenue')}
               />
 
@@ -370,29 +350,45 @@ function MonthCard({ month, defaultExpanded, onEntryChange }: { month: any; defa
               <Row label="Gross Margin" value={pct(pnl.grossMarginPct)} muted indent={1} />
 
               <SectionLabel>Operating Expenses</SectionLabel>
-              <HumanLaborBreakdown items={detail.humanLaborItems ?? []} total={pnl.employeeCosts} />
+              <EditableAmountRow
+                label="Payroll" amount={pnl.employeeCosts} source={pnl.employeeCostsSource}
+                sub="overrides the real payroll total below for this month's P&L"
+                onSave={v => setOverride('payroll', v)} onRevert={() => revertOverride('payroll')}
+              />
+              <HumanLaborBreakdown
+                items={detail.humanLaborItems ?? []}
+                total={(detail.humanLaborItems ?? []).reduce((s: number, i: any) => s + i.amount, 0)}
+              />
               <MonthlyItemSection title="Recurring Subscriptions" items={detail.subscriptions} onSave={setItemMonth} bare />
               <EntrySection
                 title="Other Operating Expenses" entries={detail.otherExpenseEntries} category="other" month={month.month}
                 onAdd={() => setShowAddEntry('other')} onChange={() => { loadDetail(); onEntryChange(); }} bare
               />
-              <Row label="Total Operating Expenses" value={`(${fmt$(pnl.totalOperatingExpenses)})`} bold emphasize />
+              <EditableAmountRow
+                label="Total Operating Expenses" amount={pnl.totalOperatingExpenses} source={pnl.totalOperatingExpensesSource}
+                sub="overrides the sum of the line items above for this month's P&L"
+                onSave={v => setOverride('totalOperatingExpenses', v)} onRevert={() => revertOverride('totalOperatingExpenses')}
+                emphasize
+              />
 
               <SectionLabel>Net Profit</SectionLabel>
               <Row label="Net Profit" value={fmt$(pnl.netProfit)} bold color={accentColor} bg={pnl.netProfit >= 0 ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'} />
               <Row label="Profit Margin" value={pct(pnl.profitMarginPct)} muted indent={1} />
               <Row label="ROAS" value={pnl.roas != null ? `${pnl.roas.toFixed(2)}x` : '—'} muted indent={1} />
 
-              <div style={{ marginTop: 8 }}>
-                <EntrySection
-                  title="Startup Fund Draws (excluded from Net Profit)" entries={detail.startupFundEntries} category="startup_fund" month={month.month}
-                  onAdd={() => setShowAddEntry('startup_fund')} onChange={() => { loadDetail(); onEntryChange(); }} bare
-                />
-              </div>
+              {churn && (
+                <>
+                  <SectionLabel>Client Retention</SectionLabel>
+                  <Row label="Active at Start of Month" value={String(churn.activeAtStart)} muted />
+                  <Row label="Churned During Month" value={String(churn.churnedDuring)} muted />
+                  <Row label="Churn Rate" value={churn.churnRatePct != null ? pct(churn.churnRatePct) : '—'} bold color={churn.churnRatePct ? 'var(--red)' : undefined} />
+                  <Row label="Retention Rate" value={churn.retentionRatePct != null ? pct(churn.retentionRatePct) : '—'} bold color="var(--green)" />
+                </>
+              )}
 
               {showAddEntry && (
                 <AddEntryModal
-                  category={showAddEntry} month={month.month}
+                  month={month.month}
                   onClose={() => setShowAddEntry(null)}
                   onSaved={() => { setShowAddEntry(null); loadDetail(); onEntryChange(); }}
                 />
@@ -493,30 +489,22 @@ function EntrySection({ title, entries, category, month, onAdd, onChange, bare }
   return <div className="card overflow-hidden">{header}{body}</div>;
 }
 
-function AddEntryModal({ category, month, onClose, onSaved }: {
-  category: 'other' | 'startup_fund'; month: string; onClose: () => void; onSaved: () => void;
+function AddEntryModal({ month, onClose, onSaved }: {
+  month: string; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(`${month}-01`);
   const [notes, setNotes] = useState('');
-  const [fundId, setFundId] = useState('');
-  const [funds, setFunds] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (category === 'startup_fund') {
-      fetch('/api/admin/income/funds').then(r => r.json()).then(d => setFunds(d.funds ?? []));
-    }
-  }, [category]);
-
   const save = async () => {
-    if (!name || !amount || (category === 'startup_fund' && !fundId)) return;
+    if (!name || !amount) return;
     setSaving(true);
     await fetch('/api/admin/income/entries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, category, amount: Number(amount), date, notes, fund_id: fundId ? Number(fundId) : undefined }),
+      body: JSON.stringify({ name, category: 'other', amount: Number(amount), date, notes }),
     });
     onSaved();
   };
@@ -524,17 +512,11 @@ function AddEntryModal({ category, month, onClose, onSaved }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
       <div className="card p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold mb-4">Add {category === 'other' ? 'Expense' : 'Fund Draw'}</h3>
+        <h3 className="font-semibold mb-4">Add Expense</h3>
         <div className="space-y-3">
           <input className="input w-full text-sm" placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
           <input className="input w-full text-sm" type="number" placeholder="Amount" value={amount} onChange={e => setAmount(e.target.value)} />
           <input className="input w-full text-sm" type="date" value={date} onChange={e => setDate(e.target.value)} />
-          {category === 'startup_fund' && (
-            <select className="input w-full text-sm" value={fundId} onChange={e => setFundId(e.target.value)}>
-              <option value="">Select fund…</option>
-              {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-          )}
           <textarea className="input w-full text-sm" placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
         </div>
         <div className="flex justify-end gap-2 mt-4">

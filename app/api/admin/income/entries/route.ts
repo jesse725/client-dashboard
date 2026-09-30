@@ -17,18 +17,18 @@ export async function POST(req: Request) {
   const auth = await requireFinancialAccess();
   if (!auth.ok) return auth.response;
 
-  const { name, category, fund_id, amount, date, notes } = await req.json();
-  if (!name || !['other', 'startup_fund'].includes(category) || !date) {
-    return NextResponse.json({ error: 'name, a valid category, and date are required' }, { status: 400 });
-  }
-  if (category === 'startup_fund' && !fund_id) {
-    return NextResponse.json({ error: 'fund_id is required for startup_fund entries' }, { status: 400 });
+  const { name, category, amount, date, notes } = await req.json();
+  // 'startup_fund' dropped from the accepted categories — that feature is
+  // gone from the UI (historical rows tagged with it stay in the database
+  // untouched, just nothing creates new ones anymore).
+  if (!name || category !== 'other' || !date) {
+    return NextResponse.json({ error: 'name, category "other", and date are required' }, { status: 400 });
   }
 
   const db = getDb();
   const result = db.prepare(
-    'INSERT INTO expense_entries (name, category, fund_id, amount, date, notes) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(name, category, category === 'startup_fund' ? fund_id : null, Number(amount) || 0, date, notes || null);
+    'INSERT INTO expense_entries (name, category, fund_id, amount, date, notes) VALUES (?, ?, NULL, ?, ?, ?)'
+  ).run(name, category, Number(amount) || 0, date, notes || null);
 
   return NextResponse.json({ id: result.lastInsertRowid });
 }

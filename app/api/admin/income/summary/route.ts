@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
 import {
   requireFinancialAccess, listCycleMonths, monthBounds, computeMonthPnL,
-  getWhopRevenueByMonth, getMetaSpendByMonth, sumResolvedItems,
-  getMonthlyOverrides, resolveMonthValue,
+  getMetaSpendByMonth, sumResolvedItems,
+  getMonthlyOverrides, resolveMonthValue, computeChurnRetention, getClientLtvTotal,
 } from '@/lib/income';
 import { getHumanLaborForMonth } from '@/lib/payroll';
 
@@ -11,30 +10,30 @@ export async function GET() {
   const auth = await requireFinancialAccess();
   if (!auth.ok) return auth.response;
 
-  const db = getDb();
   const months = listCycleMonths();
   const { since } = monthBounds(months[0]);
   const { until } = monthBounds(months[months.length - 1]);
 
-  const [{ byMonth: revenueByMonth, warning: whopWarning }, { byMonth: adSpendByMonth, warning: metaWarning }] = await Promise.all([
-    getWhopRevenueByMonth(),
-    getMetaSpendByMonth(since, until),
-  ]);
+  const { byMonth: adSpendByMonth, warning: metaWarning } = await getMetaSpendByMonth(since, until);
   const revenueOverrides = getMonthlyOverrides('revenue');
   const adSpendOverrides = getMonthlyOverrides('adSpend');
+  const payrollOverrides = getMonthlyOverrides('payroll');
+  const totalOpExOverrides = getMonthlyOverrides('totalOperatingExpenses');
 
   // Subscriptions are resolved per month (carry-forward from the most recent
   // edit); Human Labor is synced live from the real Payroll dashboard (actual
-  // recorded pay periods, not a separately-maintained estimate). Revenue/Ad
-  // Spend prefer a manual override for that month, falling back to the live
-  // Whop/Meta figure.
+  // recorded pay periods) unless overridden. Revenue is typed in monthly, full
+  // stop — no live source. Ad Spend prefers a manual override, falling back
+  // to the live Meta figure.
   const monthly = months.map(month => {
-    const revenue = resolveMonthValue(month, revenueByMonth[month], whopWarning === null, revenueOverrides);
+    const revenue = resolveMonthValue(month, undefined, false, revenueOverrides);
     const adSpend = resolveMonthValue(month, adSpendByMonth[month], metaWarning === null, adSpendOverrides);
     const recurringSubscriptions = sumResolvedItems(month, 'subscription');
     const humanLabor = getHumanLaborForMonth(month);
-    const pnl = computeMonthPnL(month, revenue.amount, adSpend.amount, recurringSubscriptions, humanLabor.total, revenue.source, adSpend.source);
-    return { ...pnl, humanLaborItems: humanLabor.items };
+    const pnl = computeMonthPnL(month, revenue.amount, adSpend.amount, recurringSubscriptions, humanLabor.total, revenue.source, adSpend.source, {
+      payrollOverride: payrollOverrides[month], totalOpExOverride: totalOpExOverrides[month],
+    });
+    return { ...pnl, humanLaborItems: humanLabor.items, churnRetention: computeChurnRetention(month) };
   });
 
   const ytdRevenue = monthly.reduce((s, m) => s + m.revenue, 0);
@@ -57,18 +56,7 @@ export async function GET() {
   // payroll + other) — a business-wide analog of ROAS.
   const profitabilityRatio = ytdTotalCosts > 0 ? ytdRevenue / ytdTotalCosts : null;
 
-  const funds = db.prepare('SELECT * FROM startup_funds ORDER BY id').all() as any[];
-  const startupFunds = funds.map(f => {
-    const spent = (db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM expense_entries WHERE fund_id = ? AND category = 'startup_fund'").get(f.id) as any).s;
-    const remaining = f.allocated - spent;
-    return {
-      id: f.id, name: f.name, notes: f.notes,
-      allocated: f.allocated, spent, remaining,
-      pctUtilized: f.allocated > 0 ? spent / f.allocated : 0,
-    };
-  });
-
-  const warnings = [whopWarning, metaWarning].filter(Boolean);
+  const warnings = [metaWarning].filter(Boolean);
 
   return NextResponse.json({
     months: monthly,
@@ -76,8 +64,8 @@ export async function GET() {
       revenue: ytdRevenue, adSpend: ytdAdSpend, grossProfit: ytdGrossProfit, netProfit: ytdNetProfit,
       totalCosts: ytdTotalCosts,
       avgProfitMarginPct, overallMarginPct, avgRoas, profitabilityRatio,
+      clientLtvTotal: getClientLtvTotal(),
     },
-    startupFunds,
     warnings,
   });
 }

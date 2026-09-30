@@ -37,9 +37,11 @@ export async function GET(req: Request) {
       COUNT(CASE WHEN q.status = 'closed' THEN 1 END)                            AS closed_deals,
       COALESCE(SUM(CASE WHEN q.status = 'closed' THEN q.value ELSE 0 END), 0)   AS revenue_closed,
       CAST((julianday('now') - julianday(c.start_date)) AS INTEGER)              AS days_as_client,
-      ROUND(
-        (julianday('now') - julianday(c.start_date)) / 30.0
-      ) * COALESCE(c.retainer_price, 0)                                          AS total_payments_received,
+      -- LTV = confirmed months paid (the Kanban "Month N" stage an admin
+      -- moved this client's card to, not elapsed calendar time) × retainer.
+      -- See lib/db.ts's months_paid migration for how this stays accurate
+      -- through a client later moving to At Risk/Churned.
+      c.months_paid * COALESCE(c.retainer_price, 0)                              AS total_payments_received,
       (SELECT cn.client_sentiment FROM call_notes cn
        WHERE cn.client_id = c.id AND cn.call_type = 'checkin' AND cn.client_sentiment IS NOT NULL
        ORDER BY cn.id DESC LIMIT 1)                                              AS latest_sentiment
@@ -166,20 +168,43 @@ export async function PATCH(req: Request) {
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
   const db = getDb();
+  // This is the Kanban drag-and-drop's only write path for client_status —
+  // months_paid/churned_at maintenance is piggybacked here rather than a
+  // second route, since both are purely derived from this same field.
+  const hasStatus = typeof client_status === 'string' && client_status.length > 0;
+  const monthMatch = hasStatus ? client_status.match(/^Month (\d+)/) : null;
+  // null = leave months_paid unchanged (COALESCE below) — only an explicit
+  // "Month N" move ever sets it, so it survives a later move to At Risk/
+  // Churned instead of resetting.
+  const monthsPaidValue = monthMatch ? Number(monthMatch[1]) : null;
+
   db.prepare(`
     UPDATE clients SET
       client_status         = COALESCE(?, client_status),
       internal_notes        = COALESCE(?, internal_notes),
       checkin_count         = COALESCE(?, checkin_count),
-      testimonial_collected = COALESCE(?, testimonial_collected)
+      testimonial_collected = COALESCE(?, testimonial_collected),
+      months_paid           = COALESCE(?, months_paid)
     WHERE id = ?
   `).run(
     client_status ?? null,
     internal_notes ?? null,
     checkin_count ?? null,
     testimonial_collected ?? null,
+    monthsPaidValue,
     id
   );
+
+  // churned_at tracks client_status directly — set the instant it becomes
+  // exactly 'Churned', cleared the instant it becomes anything else. Kept as
+  // its own statement since, unlike the fields above, NULL is itself a
+  // meaningful value here rather than "leave unchanged".
+  if (hasStatus) {
+    db.prepare('UPDATE clients SET churned_at = ? WHERE id = ?').run(
+      client_status === 'Churned' ? new Date().toISOString().slice(0, 10) : null,
+      id
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
