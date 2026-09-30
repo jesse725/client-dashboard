@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Users, Plus, ChevronDown, ChevronRight, CheckCircle2, Clock,
-  Trash2, FileText, Landmark, UserCog, LogIn, Timer, Rocket, RotateCcw,
+  Trash2, FileText, Landmark, UserCog, LogIn, Timer, Rocket, RotateCcw, BookUser, Receipt,
 } from 'lucide-react';
 import { PAYMENT_METHODS } from '@/lib/payroll-constants';
 
@@ -88,6 +88,7 @@ function EmployeeCard({ employee, assignableOptions, adminUsers, onChange }: { e
       clientOnboardLaunchBonus: employee.client_onboard_launch_bonus ?? 100,
       clientManagementMonthlyFee: employee.client_management_monthly_fee ?? 150,
       linkedUserId: employee.linked_user_id ?? '',
+      responsibilities: employee.responsibilities ?? '',
       notes: employee.notes ?? '',
     });
     setEditing(true);
@@ -211,6 +212,7 @@ function EmployeeCard({ employee, assignableOptions, adminUsers, onChange }: { e
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Lets them see their own payroll by signing in with this Team/Admin account instead of a separate employee email.</p>
               </Field>
               <Field label="Employment Agreement URL"><input className="input text-sm w-full" placeholder="Link to signed agreement (Drive, Dropbox, etc.)" value={form.agreementUrl} onChange={e => setForm({ ...form, agreementUrl: e.target.value })} /></Field>
+              <Field label="Responsibilities"><textarea className="input text-sm w-full" rows={2} placeholder="What this person actually does…" value={form.responsibilities} onChange={e => setForm({ ...form, responsibilities: e.target.value })} /></Field>
               <Field label="Notes"><textarea className="input text-sm w-full" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setEditing(false)} className="btn-ghost text-sm">Cancel</button>
@@ -219,6 +221,18 @@ function EmployeeCard({ employee, assignableOptions, adminUsers, onChange }: { e
             </div>
           ) : (
             <>
+              <div className="card-2 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                    <BookUser size={12} /> Responsibilities
+                  </p>
+                  <button onClick={startEdit} className="btn-ghost text-xs">Edit</button>
+                </div>
+                <p className="text-sm" style={{ color: employee.responsibilities ? 'var(--text)' : 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>
+                  {employee.responsibilities || 'Not set yet.'}
+                </p>
+              </div>
+
               <div className="card-2 p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Pay Structure</p>
@@ -319,6 +333,8 @@ function EmployeeCard({ employee, assignableOptions, adminUsers, onChange }: { e
                 </div>
               )}
 
+              <ActualPaymentsSection periods={detail.periods} />
+
               {(employee.client_onboard_launch_bonus > 0 || employee.client_management_monthly_fee > 0 || employee.per_client_fee > 0) && (
                 <ClientManagementSection
                   employee={employee}
@@ -360,6 +376,43 @@ function EmployeeCard({ employee, assignableOptions, adminUsers, onChange }: { e
           onClose={() => setShowRecordPayment(false)}
           onSaved={() => { setShowRecordPayment(false); loadDetail(); onChange(); }}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Actual Payments ──────────────────────────────────────────────────────────
+// Every period above (Current Period, History) shows CALCULATED totals,
+// including periods still pending — useful for "what's owed," but not the
+// same question as "what has actually been paid." This flattens every real
+// payment_records row across every period into one ledger, newest first, so
+// there's a section that only ever shows money that genuinely moved.
+function ActualPaymentsSection({ periods }: { periods: any[] }) {
+  const payments = periods
+    .flatMap((p: any) => (p.paymentRecords ?? []).map((pr: any) => ({ ...pr, payoutDate: p.payout_date })))
+    .sort((a: any, b: any) => (a.paid_at < b.paid_at ? 1 : -1));
+
+  return (
+    <div className="card-2 overflow-hidden">
+      <p className="text-xs font-semibold uppercase tracking-wide px-4 pt-3 pb-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+        <Receipt size={12} /> Actual Payments
+      </p>
+      {payments.length === 0 ? (
+        <p className="px-4 pb-3 text-xs" style={{ color: 'var(--text-muted)' }}>Nothing recorded as paid yet.</p>
+      ) : (
+        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+          {payments.map((pr: any) => (
+            <div key={pr.id} className="px-4 py-2.5 flex items-center justify-between text-sm gap-3">
+              <div className="min-w-0">
+                <p>{fmtDate(pr.paid_at.slice(0, 10))} <span style={{ color: 'var(--text-muted)' }}>· {methodLabel(pr.method)}</span></p>
+                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                  for {fmtDate(pr.payoutDate)} period{pr.reference ? ` · ref: ${pr.reference}` : ''} · recorded by {pr.recorded_by}
+                </p>
+              </div>
+              <span className="font-semibold shrink-0" style={{ color: 'var(--green)' }}>{fmt$(pr.amount)}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

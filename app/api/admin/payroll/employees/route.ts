@@ -5,9 +5,9 @@ import { ensureCurrentPeriod, getPeriodWithTotal, getPeriodForDate } from '@/lib
 import { syncClientManagementPay, getClientManagementSummary } from '@/lib/clientManagement';
 
 // Payroll is Jesse-only, same as the rest of this app's financial data —
-// other admins can't see coworkers' pay. The Internals Hub reads this same
-// endpoint (role/responsibilities/contract/clientTracking are all here
-// already) rather than duplicating this fetch+sync logic elsewhere.
+// other admins can't see coworkers' pay. role/responsibilities/contract/
+// clientTracking all ride along here too, so this is the one place that
+// needs this fetch+sync logic.
 export async function GET() {
   const auth = await requireFinancialAccess();
   if (!auth.ok) return auth.response;

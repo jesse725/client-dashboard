@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Wallet, Calendar, CheckCircle2, Clock, LogOut, Info, FileText, Timer } from 'lucide-react';
+import { Wallet, Calendar, CheckCircle2, Clock, LogOut, Info, FileText, Timer, BookUser, Receipt } from 'lucide-react';
 import { PAYMENT_METHODS } from '@/lib/payroll-constants';
 
 function methodLabel(value: string): string {
@@ -90,6 +90,10 @@ export default function EmployeePayrollPage() {
 
   const { employee, currentPeriod, history } = data;
   const ps = employee.payStructure;
+  const allPeriods = [currentPeriod, ...history].filter(Boolean);
+  const actualPayments = allPeriods
+    .flatMap((p: any) => (p.paymentRecords ?? []).map((pr: any) => ({ ...pr, payoutDate: p.payout_date })))
+    .sort((a: any, b: any) => (a.paid_at < b.paid_at ? 1 : -1));
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
@@ -109,6 +113,14 @@ export default function EmployeePayrollPage() {
       </nav>
 
       <div className="px-4 py-5 max-w-lg mx-auto space-y-5">
+        {/* Responsibilities */}
+        <div className="card p-5">
+          <h2 className="font-semibold text-sm flex items-center gap-1.5 mb-2"><BookUser size={14} style={{ color: 'var(--accent)' }} /> Responsibilities</h2>
+          <p className="text-sm" style={{ color: employee.responsibilities ? 'var(--text)' : 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>
+            {employee.responsibilities || 'Not set yet — ask an admin to add this.'}
+          </p>
+        </div>
+
         {/* Current period */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-1">
@@ -184,6 +196,30 @@ export default function EmployeePayrollPage() {
                     <StatusPill status={p.status} />
                     <span className="font-semibold w-16 text-right">{fmt$(p.totalAmount)}</span>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Actual payments — only real payment_records, unlike Payment History
+            above which also shows still-pending calculated totals. */}
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-1.5" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+            <Receipt size={14} />
+            <p className="font-semibold text-sm">Actual Payments</p>
+          </div>
+          {actualPayments.length === 0 ? (
+            <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>Nothing recorded as paid yet.</p>
+          ) : (
+            <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+              {actualPayments.map((pr: any) => (
+                <div key={pr.id} className="px-4 py-3 flex items-center justify-between text-sm gap-3">
+                  <div className="min-w-0">
+                    <p>{fmtDate(pr.paid_at.slice(0, 10))} <span style={{ color: 'var(--text-muted)' }}>· {methodLabel(pr.method)}</span></p>
+                    <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>for {fmtDate(pr.payoutDate)} period{pr.reference ? ` · ref: ${pr.reference}` : ''}</p>
+                  </div>
+                  <span className="font-semibold shrink-0" style={{ color: 'var(--green)' }}>{fmt$(pr.amount)}</span>
                 </div>
               ))}
             </div>

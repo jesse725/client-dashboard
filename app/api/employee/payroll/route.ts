@@ -23,6 +23,7 @@ export async function GET() {
       role: employee.role,
       email: employee.email,
       agreementUrl: employee.agreement_url,
+      responsibilities: employee.responsibilities,
       payStructure: {
         baseAmountPerPeriod: employee.base_amount_per_period,
         perClientFee: employee.per_client_fee,

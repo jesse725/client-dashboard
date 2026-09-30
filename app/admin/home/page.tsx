@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BarChart2, TrendingUp, Plus, Settings2, DollarSign, Users, BookUser, Wallet, ClipboardList } from 'lucide-react';
+import { BarChart2, TrendingUp, Plus, Settings2, DollarSign, Users, Wallet, ClipboardList } from 'lucide-react';
 
 export default function AdminHomePage() {
   const { data: session, status } = useSession();
@@ -75,16 +75,9 @@ export default function AdminHomePage() {
       {
         href: '/admin/payroll',
         title: 'Payroll',
-        desc: 'Per-employee pay structures, bonuses, pay periods & Wise export',
+        desc: 'Per-employee pay structures, responsibilities, actual payments & pay periods',
         icon: <Users size={22} />,
         color: '#8b5cf6',
-      },
-      {
-        href: '/admin/internals',
-        title: 'Internals Hub',
-        desc: 'Every employee’s hub — contract, role & responsibilities, payroll schedule, per-account clients',
-        icon: <BookUser size={22} />,
-        color: '#e879f9',
       },
     ] : []),
   ];
