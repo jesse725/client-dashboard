@@ -143,6 +143,7 @@ export interface PipelineStats {
   unqualified: number;
   phone: number;
   inhome: number;
+  noShow: number; // currently sitting in a "no-show" stage — a subset of `phone`
 }
 
 export interface DashboardMetrics {

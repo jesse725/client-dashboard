@@ -78,7 +78,10 @@ export async function GET(req: Request) {
       // Set when the GHL pull failed — cached_leads/cached_inhome below are then
       // the last saved counts, and last_lead_at is unknown rather than "never".
       ghl_error: null as string | null,
-      meta_connected: false, best_ad_cpl: null as number | null, last_lead_at: null as string | null, contact_pct: null as number | null, appointments: 0,
+      meta_connected: false, best_ad_cpl: null as number | null, best_ad_name: null as string | null,
+      last_lead_at: null as string | null, contact_pct: null as number | null, appointments: 0,
+      no_show: 0, shows: 0, show_pct: null as number | null,
+      recent_cpl: null as number | null,
     };
     try {
       const live = await getLiveClientStats(c, agencyGhlKey, { refresh });
@@ -93,6 +96,12 @@ export async function GET(req: Request) {
       // contacted and phone are 0 — so a percentage or appointment count built
       // from them would be wrong rather than merely stale. Leave them blank.
       const ghlDown = !!live.ghlError;
+      // Shows = appointments minus whoever's currently sitting in a no-show
+      // stage — an appointment counts as a show unless marked otherwise (see
+      // lib/ghl.ts's stageIsNoShow). Both sides come from the same live pull,
+      // so this can't disagree with the Appointments column next to it.
+      const appointments = ghlDown ? 0 : live.phone;
+      const shows = ghlDown ? 0 : Math.max(0, live.phone - live.noShow);
       row = {
         ...row,
         cached_leads: live.leads, cached_inhome: live.inhome,
@@ -103,7 +112,10 @@ export async function GET(req: Request) {
         contact_pct: !ghlDown && live.leads > 0 ? (contactedOrAppt / live.leads) * 100 : null,
         // Appointments = anyone who ever reached a phone appointment (inhome
         // is a subset of phone now — see lib/ghl.ts)
-        appointments: ghlDown ? 0 : live.phone,
+        appointments,
+        no_show: ghlDown ? 0 : live.noShow,
+        shows,
+        show_pct: !ghlDown && appointments > 0 ? (shows / appointments) * 100 : null,
       };
     } catch (e: any) {
       // Unexpected (not a Meta/GHL API failure — those are handled inside
@@ -114,7 +126,9 @@ export async function GET(req: Request) {
     try {
       const perf = await getClientAdPerformance(c, agencyGhlKey, { refresh });
       row.best_ad_cpl = perf.bestCpl;
+      row.best_ad_name = perf.bestAdName;
       row.last_lead_at = perf.lastLeadAt;
+      row.recent_cpl = perf.recentCpl;
       // Either Meta call may be the one that trips (rate limits hit one and not
       // the other) — keep whichever reason there is.
       if (!row.meta_error && perf.metaError) row.meta_error = perf.metaError;

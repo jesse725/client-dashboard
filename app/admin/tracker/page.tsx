@@ -55,9 +55,14 @@ interface ClientRow {
   meta_zero?: boolean; // Meta is answering and says $0 has been spent since launch
   ghl_error?: string | null;
   best_ad_cpl: number | null;
+  best_ad_name: string | null;
   last_lead_at: string | null;
   contact_pct: number | null;
   appointments: number;
+  no_show: number;
+  shows: number;
+  show_pct: number | null;
+  recent_cpl: number | null; // CPL over the last 3 days
 }
 
 // GHL Client Success pipeline stage → kanban column mapping
@@ -146,6 +151,69 @@ function autoStage(c: ClientRow): string {
   if (d <= 125) return 'Month 2';
   return 'Month 3+';
 }
+
+// ── Client health rating (green/yellow/red) ──────────────────────────────────
+// Shared with the CPL/Best Ad CPL/Last Lead column colors below, so the
+// individual columns and the composite Status column can never disagree
+// about what counts as "good".
+const CPL_GREEN_MAX = 50;
+const CPL_YELLOW_MAX = 150;
+const LAST_LEAD_GREEN_MAX_DAYS = 3;
+const LAST_LEAD_YELLOW_MAX_DAYS = 7;
+// No precedent elsewhere in this file for a lead-VOLUME threshold — a
+// starting point, easy to retune here if it doesn't match reality.
+const TOTAL_LEADS_GREEN_MIN = 10;
+const TOTAL_LEADS_YELLOW_MIN = 3;
+
+type HealthStatus = 'green' | 'yellow' | 'red';
+
+// Each signal scores 0 (bad) / 1 (mediocre, OR genuinely unknown) / 2 (good) —
+// "unknown" scores neutral rather than bad, so a client missing Meta
+// credentials isn't penalized the same as one that's actually performing
+// poorly. Summed out of 8 and banded into green/yellow/red.
+function scoreLastLead(c: ClientRow): number {
+  if (c.ghl_error) return 1;
+  if (!c.last_lead_at) return 0;
+  const days = Math.floor((Date.now() - new Date(c.last_lead_at).getTime()) / 86400000);
+  if (days <= LAST_LEAD_GREEN_MAX_DAYS) return 2;
+  if (days <= LAST_LEAD_YELLOW_MAX_DAYS) return 1;
+  return 0;
+}
+function scoreCpl(cpl: number): number {
+  if (cpl <= 0) return 1; // no spend or no leads yet — not evidence of a problem
+  if (cpl <= CPL_GREEN_MAX) return 2;
+  if (cpl <= CPL_YELLOW_MAX) return 1;
+  return 0;
+}
+function scoreBestAdCpl(v: number | null): number {
+  if (v == null) return 1;
+  if (v <= CPL_GREEN_MAX) return 2;
+  if (v <= CPL_YELLOW_MAX) return 1;
+  return 0;
+}
+function scoreTotalLeads(n: number): number {
+  if (n >= TOTAL_LEADS_GREEN_MIN) return 2;
+  if (n >= TOTAL_LEADS_YELLOW_MIN) return 1;
+  return 0;
+}
+function computeHealth(c: ClientRow, cpl: number): { status: HealthStatus; points: number; breakdown: string[] } {
+  const points = scoreLastLead(c) + scoreCpl(cpl) + scoreBestAdCpl(c.best_ad_cpl) + scoreTotalLeads(c.cached_leads);
+  const status: HealthStatus = points >= 6 ? 'green' : points >= 3 ? 'yellow' : 'red';
+  return {
+    status, points,
+    breakdown: [
+      `Last lead — ${c.ghl_error ? 'unknown (GHL not syncing)' : fmtLastLead(c.last_lead_at)}`,
+      `CPL — ${cpl > 0 ? fmt$(cpl) : 'no data'}`,
+      `Best Ad CPL — ${c.best_ad_cpl != null ? fmt$(c.best_ad_cpl) : 'no data'}`,
+      `Total leads — ${c.cached_leads}`,
+    ],
+  };
+}
+const HEALTH_CONFIG: Record<HealthStatus, { color: string; label: string }> = {
+  green:  { color: 'var(--green)',  label: 'Healthy' },
+  yellow: { color: 'var(--yellow)', label: 'Watch' },
+  red:    { color: 'var(--red)',    label: 'At Risk' },
+};
 
 // ── Meta sync status ──────────────────────────────────────────────────────────
 // Ad spend used to render identically whether it was live from Meta, a manual
@@ -400,7 +468,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
           <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                {['Client', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'Best Ad CPL', 'Last Lead', 'Leads', 'Contact %', 'Appointments', 'Cost/Appointment', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
+                {['Client', 'Status', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'CPL (3d)', 'Best Ad', 'Last Lead', 'Leads', 'Contact %', 'Appointments', 'Shows', 'Cost/Appointment', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -411,6 +479,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                 const cpl = c.cached_leads > 0 ? totalAdSpend / c.cached_leads : 0;
                 const cpAppt = c.appointments > 0 ? totalAdSpend / c.appointments : 0;
                 const closeRate = c.total_quotes > 0 ? (c.closed_deals / c.total_quotes) * 100 : 0;
+                const health = computeHealth(c, cpl);
                 const sentiment = c.latest_sentiment ? SENTIMENT_CONFIG[c.latest_sentiment] : null;
                 const stage = KANBAN_STAGES.find(s => s.key === c.client_status) ?? KANBAN_STAGES.find(s => s.key === autoStage(c));
                 const daysUntilBilling = c.rebilling_date
@@ -433,6 +502,13 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                       </div>
                     </td>
                     <td className="px-4 py-3">
+                      <span
+                        className="inline-flex w-3 h-3 rounded-full"
+                        style={{ background: HEALTH_CONFIG[health.status].color }}
+                        title={`${HEALTH_CONFIG[health.status].label} (${health.points}/8)\n\n${health.breakdown.join('\n')}`}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
                       <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: `${stage?.color ?? '#888'}18`, color: stage?.color ?? '#888' }}>
                         {c.client_status || autoStage(c)}
                       </span>
@@ -446,8 +522,16 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                     <td className="px-4 py-3 font-semibold" style={{ color: cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 150 ? 'var(--red)' : cpl > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {cpl > 0 ? `$${Math.round(cpl)}` : '—'}
                     </td>
-                    <td className="px-4 py-3 font-semibold" style={{ color: c.best_ad_cpl == null ? 'var(--text-muted)' : c.best_ad_cpl <= 50 ? 'var(--green)' : c.best_ad_cpl <= 150 ? 'var(--yellow)' : 'var(--red)' }}>
-                      {c.best_ad_cpl != null ? `$${Math.round(c.best_ad_cpl)}` : '—'}
+                    <td className="px-4 py-3 font-semibold" style={{ color: c.recent_cpl == null ? 'var(--text-muted)' : c.recent_cpl <= CPL_GREEN_MAX ? 'var(--green)' : c.recent_cpl <= CPL_YELLOW_MAX ? 'var(--yellow)' : 'var(--red)' }}
+                      title="Overall cost per lead, last 3 days">
+                      {c.recent_cpl != null ? `$${Math.round(c.recent_cpl)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold truncate max-w-[160px]" style={{ color: c.best_ad_cpl == null ? 'var(--text-muted)' : c.best_ad_cpl <= CPL_GREEN_MAX ? 'var(--green)' : c.best_ad_cpl <= CPL_YELLOW_MAX ? 'var(--yellow)' : 'var(--red)' }}
+                        title={c.best_ad_name ?? undefined}>
+                        {c.best_ad_name ?? '—'}
+                      </p>
+                      {c.best_ad_cpl != null && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>${Math.round(c.best_ad_cpl)} CPL</p>}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap" style={{
                       color: c.ghl_error ? 'var(--text-muted)'
@@ -470,6 +554,18 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                       {c.contact_pct != null ? `${Math.round(c.contact_pct)}%` : '—'}
                     </td>
                     <td className="px-4 py-3 text-center">{c.appointments > 0 ? c.appointments : '—'}</td>
+                    <td className="px-4 py-3 text-center">
+                      {c.appointments > 0 ? (
+                        <>
+                          <span className="font-semibold" style={{ color: c.show_pct == null ? 'var(--text-muted)' : c.show_pct >= 80 ? 'var(--green)' : c.show_pct >= 50 ? 'var(--yellow)' : 'var(--red)' }}>
+                            {c.shows}/{c.appointments}
+                          </span>
+                          {c.show_pct != null && (
+                            <span className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>({Math.round(c.show_pct)}%)</span>
+                          )}
+                        </>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3 text-center font-semibold" style={{ color: cpAppt > 0 && cpAppt <= 150 ? 'var(--green)' : cpAppt > 400 ? 'var(--red)' : cpAppt > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {cpAppt > 0 ? `$${Math.round(cpAppt)}` : '—'}
                     </td>

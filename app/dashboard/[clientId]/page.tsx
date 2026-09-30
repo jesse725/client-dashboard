@@ -116,7 +116,7 @@ export default function ClientDashboardPage() {
   const clientId = params.clientId as string;
 
   const [client, setClient] = useState<Client | null>(null);
-  const [pipeline, setPipeline] = useState<PipelineStats>({ leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0 });
+  const [pipeline, setPipeline] = useState<PipelineStats>({ leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0, noShow: 0 });
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [metaStats, setMetaStats] = useState<{
     spend: number; impressions: number; clicks: number; ctr: number; cpc: number; reach: number; frequency: number;

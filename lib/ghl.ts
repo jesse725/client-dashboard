@@ -216,6 +216,15 @@ function stageImpliesInhomeHappened(name: string): boolean {
     || (n.includes('rescheduled') && n.includes('home'));
 }
 
+// A booked appointment is assumed to have been a show unless it's CURRENTLY
+// sitting in a stage that says otherwise — an exact match on the present
+// stage, not cumulative like phone/inhome above, since moving on from here
+// (e.g. into Rescheduled or Quoted) means it stopped being a no-show.
+function stageIsNoShow(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes('no-show') || n.includes('no show');
+}
+
 // ── Location-level: opportunity counts per stage ─────────────────────────────
 export async function fetchGHLPipelineStats(
   apiKey: string,
@@ -256,6 +265,9 @@ export async function fetchGHLPipelineStats(
   const countReached = (stageId: string | undefined, reached: Set<string>) =>
     stageId ? allOpps.filter((o) => reached.has(o.pipelineStageId)).length : 0;
 
+  const noShowStageIds = new Set(stages.filter((s) => stageIsNoShow(s.name)).map((s) => s.id));
+  const noShow = allOpps.filter((o) => noShowStageIds.has(o.pipelineStageId)).length;
+
   // Total leads = all opps ever in the pipeline (not just those still in "New Lead" stage)
   return {
     leads: allOpps.length,
@@ -263,6 +275,7 @@ export async function fetchGHLPipelineStats(
     unqualified: count(stageIds.unqualified),
     phone: countReached(stageIds.phone, phoneReached),
     inhome: countReached(stageIds.inhome, inhomeReached),
+    noShow,
   };
 }
 

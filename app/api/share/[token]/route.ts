@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     .all(client.id) as Quote[];
 
   // GHL pipeline
-  let pipeline = { leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0 };
+  let pipeline = { leads: 0, contacted: 0, unqualified: 0, phone: 0, inhome: 0, noShow: 0 };
   if (client.ghl_location_id && client.ghl_pipeline_id) {
     const agencyKey = (db.prepare(`SELECT value FROM settings WHERE key = 'ghl_agency_key'`).get() as any)?.value ?? '';
     const apiKey = resolveApiKey(client.ghl_api_key, agencyKey);

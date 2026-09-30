@@ -14,6 +14,7 @@ export interface LiveClientStats {
   inhome: number;
   contacted: number;
   phone: number;
+  noShow: number; // of `phone`, how many are currently sitting in a no-show stage
   totalAdSpend: number;
   metaConnected: boolean; // the Meta call succeeded (even if it reported $0)
   hasMetaCredentials: boolean; // a token + ad account are saved for this client
@@ -46,6 +47,7 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string, o
   let inhome = 0;
   let contacted = 0;
   let phone = 0;
+  let noShow = 0;
   let ghlError: string | null = describeMissingGhlConfig(client);
   if (!ghlError) {
     try {
@@ -67,6 +69,7 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string, o
       inhome = pipeline.inhome ?? 0;
       contacted = pipeline.contacted ?? 0;
       phone = pipeline.phone ?? 0;
+      noShow = pipeline.noShow ?? 0;
     } catch (e: any) {
       // Fall back to the last cached counts below — but say so instead of
       // presenting them as current.
@@ -123,5 +126,5 @@ export async function getLiveClientStats(client: Client, agencyGhlKey: string, o
     totalAdSpend = (client.daily_ad_spend ?? 0) * daysTogether;
   }
 
-  return { leads, inhome, contacted, phone, totalAdSpend, metaConnected: metaSpend != null, hasMetaCredentials, metaError, metaStale, metaFetchedAt, metaZeroSpend: metaSpend === 0, ghlError, spendSource };
+  return { leads, inhome, contacted, phone, noShow, totalAdSpend, metaConnected: metaSpend != null, hasMetaCredentials, metaError, metaStale, metaFetchedAt, metaZeroSpend: metaSpend === 0, ghlError, spendSource };
 }

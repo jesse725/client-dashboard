@@ -105,6 +105,20 @@ export function metaWindow(startDate: string | null | undefined, now: Date = new
   return { since, until, clamped };
 }
 
+// A fixed trailing window ("last N calendar days", inclusive of today) — unlike
+// metaWindow above, which always starts at the CLIENT's start date. Used for a
+// rolling recent-performance figure (e.g. "CPL, last 3 days") that should shift
+// forward every day regardless of how long the client's been running. Same LA-
+// date convention as metaWindow, for the same reason (never ahead of a US
+// account's own "today").
+export function recentWindow(days: number, now: Date = new Date()): { since: string; until: string } {
+  const until = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const sinceDate = new Date(`${until}T00:00:00Z`);
+  sinceDate.setUTCDate(sinceDate.getUTCDate() - (days - 1));
+  const since = sinceDate.toISOString().slice(0, 10);
+  return { since, until };
+}
+
 // The UTC instant that is local midnight, at the start of `dateStr` (YYYY-MM-DD),
 // in IANA zone `tz` — needed when a boundary has to be compared directly against
 // another system's real UTC timestamps (e.g. GHL's `createdAt`), unlike metaWindow's
