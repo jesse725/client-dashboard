@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Layers,
   Plus, Trash2, Users, Wallet, LayoutDashboard, ListChecks, ChevronDown, ChevronRight, Scale,
-  Pencil, Check, X, RotateCcw, Zap,
+  Pencil, Check, X, RotateCcw, Zap, Target, Calendar,
 } from 'lucide-react';
 
 function fmt$(n: number) {
@@ -194,7 +194,7 @@ function OverviewView() {
   if (loading) return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading…</p>;
   if (!data || data.error) return <p className="text-sm" style={{ color: 'var(--red)' }}>{data?.error || 'Failed to load'}</p>;
 
-  const { months, ytd, warnings } = data;
+  const { months, ytd, clientLtvBreakdown, clientStageBreakdown, warnings } = data;
 
   // Group months by year — a flat list today, ready to fold into per-year
   // cards once there's more than one year of history.
@@ -211,16 +211,29 @@ function OverviewView() {
 
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Cumulative (All-Time, USD)</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard label="Total Revenue" value={fmt$(ytd.revenue)} color="#6c63ff" icon={<DollarSign size={16} />} />
           <StatCard label="Total Ad Spend" value={fmt$(ytd.adSpend)} color="#f59e0b" icon={<TrendingDown size={16} />} />
           <StatCard label="Cumulative Profit" value={fmt$(ytd.netProfit)} color={ytd.netProfit >= 0 ? 'var(--green)' : 'var(--red)'} icon={<Wallet size={16} />} />
           <StatCard label="Overall Margin" value={ytd.overallMarginPct != null ? pct(ytd.overallMarginPct) : '—'} color="#16a34a" icon={<Layers size={16} />} />
           <StatCard label="Profitability Ratio" value={ytd.profitabilityRatio != null ? `${ytd.profitabilityRatio.toFixed(2)}x` : '—'} color="#0d9488" icon={<Scale size={16} />} sub="revenue per $1 of total cost" />
           <StatCard label="Avg ROAS" value={ytd.avgRoas != null ? `${ytd.avgRoas.toFixed(2)}x` : '—'} color="#8b5cf6" icon={<TrendingUp size={16} />} />
-          <StatCard label="Client LTV" value={fmt$(ytd.clientLtvTotal)} color="#e879f9" icon={<Users size={16} />} sub="retainer × confirmed months paid" />
         </div>
       </div>
+
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Client Health &amp; Growth</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <StatCard label="Client LTV" value={fmt$(ytd.clientLtvTotal)} color="#e879f9" icon={<Users size={16} />} sub="retainer × confirmed months paid" />
+          <StatCard label="LTV : CAC" value={ytd.ltvToCac != null ? `${ytd.ltvToCac.toFixed(1)}x` : '—'} color={ytd.ltvToCac == null ? 'var(--text-muted)' : ytd.ltvToCac >= 3 ? 'var(--green)' : ytd.ltvToCac >= 1 ? 'var(--yellow)' : 'var(--red)'} icon={<Target size={16} />} sub="client value per $1 of acquisition spend" />
+          <StatCard label="Avg Client Tenure" value={ytd.avgClientTenureMonths != null ? `${ytd.avgClientTenureMonths.toFixed(1)} mo` : '—'} color="#0ea5e9" icon={<Calendar size={16} />} sub={ytd.avgClientTenureMonths != null ? 'among churned clients' : 'no churned clients yet'} />
+          <StatCard label="Churn Rate" value={ytd.churnRetention?.churnRatePct != null ? pct(ytd.churnRetention.churnRatePct) : '—'} color={ytd.churnRetention?.churnRatePct ? 'var(--red)' : 'var(--text-muted)'} icon={<TrendingDown size={16} />} sub="latest month" />
+          <StatCard label="Retention Rate" value={ytd.churnRetention?.retentionRatePct != null ? pct(ytd.churnRetention.retentionRatePct) : '—'} color="var(--green)" icon={<TrendingUp size={16} />} sub="latest month" />
+        </div>
+      </div>
+
+      <ClientStageBreakdown rows={clientStageBreakdown} />
+      <ClientLtvTable rows={clientLtvBreakdown} />
 
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Months</h3>
@@ -236,6 +249,81 @@ function OverviewView() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Preferred display order for the Kanban journey stages — anything not in
+// this list (e.g. the legacy 'Active' default a client starts at before its
+// first drag) is appended at the end rather than dropped, so the counts
+// still add up to the real total even for stages this list doesn't know about.
+const STAGE_ORDER = ['Onboarding', 'Launching', '14 Day Check-in', '28 Day Check-in', 'Month 1', 'Month 2', 'Month 3+', 'At Risk', 'Churned'];
+
+// "How many moved to Month 1/2/3, how many churned" as a standing figure —
+// counts clients currently sitting at each Kanban stage.
+function ClientStageBreakdown({ rows }: { rows: { status: string; count: number }[] }) {
+  const byStatus = new Map(rows.map(r => [r.status, r.count]));
+  const known = STAGE_ORDER.filter(s => byStatus.has(s));
+  const unknown = rows.map(r => r.status).filter(s => !STAGE_ORDER.includes(s));
+  const ordered = [...known, ...unknown];
+  const total = rows.reduce((s, r) => s + r.count, 0);
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
+        Client Journey — {total} Total
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        {ordered.map(status => (
+          <div key={status} className="card px-4 py-3">
+            <p className="text-xs mb-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{status}</p>
+            <p className="font-bold text-xl" style={{ color: status === 'Churned' ? 'var(--red)' : status === 'At Risk' ? 'var(--yellow)' : 'var(--text)' }}>
+              {byStatus.get(status)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientLtvTable({ rows }: { rows: { id: number; name: string; clientStatus: string; monthsPaid: number; retainerPrice: number; ltv: number }[] }) {
+  const [open, setOpen] = useState(true);
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="card overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="w-full px-4 py-3 flex items-center justify-between text-left" style={{ background: 'var(--surface-2)' }}>
+        <div className="flex items-center gap-2">
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          <span className="font-semibold text-sm">Per-Client LTV</span>
+        </div>
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{rows.length} clients · sorted highest first</span>
+      </button>
+      {open && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                {['Client', 'Stage', 'Months Paid', 'Retainer', 'LTV'].map(h => (
+                  <th key={h} className="text-left px-4 py-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.id} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : undefined, opacity: r.clientStatus === 'Churned' ? 0.6 : 1 }}>
+                  <td className="px-4 py-2 font-medium">{r.name}</td>
+                  <td className="px-4 py-2" style={{ color: 'var(--text-muted)' }}>{r.clientStatus}</td>
+                  <td className="px-4 py-2">{r.monthsPaid}</td>
+                  <td className="px-4 py-2">{fmt$(r.retainerPrice)}/mo</td>
+                  <td className="px-4 py-2 font-semibold" style={{ color: 'var(--accent)' }}>{fmt$(r.ltv)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

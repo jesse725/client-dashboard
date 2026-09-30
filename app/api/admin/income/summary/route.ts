@@ -3,6 +3,7 @@ import {
   requireFinancialAccess, listCycleMonths, monthBounds, computeMonthPnL,
   getMetaSpendByMonth, sumResolvedItems,
   getMonthlyOverrides, resolveMonthValue, computeChurnRetention, getClientLtvTotal,
+  getClientLtvBreakdown, getClientStageBreakdown, getAvgClientTenureMonths,
 } from '@/lib/income';
 import { getHumanLaborForMonth } from '@/lib/payroll';
 
@@ -58,14 +59,29 @@ export async function GET() {
 
   const warnings = [metaWarning].filter(Boolean);
 
+  const clientLtvTotal = getClientLtvTotal();
+  // Dollars of client lifetime value generated per dollar of the agency's own
+  // acquisition ad spend — same "LTV over ad spend" shape as the Sales
+  // Tracker's existing LTV:CAC card (app/admin/sales/page.tsx), so this
+  // isn't a third, differently-defined ratio; it's the same one, surfaced
+  // here too since this page is meant to be the one money-hub view.
+  const ltvToCac = ytdAdSpend > 0 ? clientLtvTotal / ytdAdSpend : null;
+  // Latest month's churn/retention as the headline figure — every month's
+  // own number is still visible by expanding that month's card.
+  const latestChurnRetention = monthly.length > 0 ? monthly[monthly.length - 1].churnRetention : null;
+
   return NextResponse.json({
     months: monthly,
     ytd: {
       revenue: ytdRevenue, adSpend: ytdAdSpend, grossProfit: ytdGrossProfit, netProfit: ytdNetProfit,
       totalCosts: ytdTotalCosts,
       avgProfitMarginPct, overallMarginPct, avgRoas, profitabilityRatio,
-      clientLtvTotal: getClientLtvTotal(),
+      clientLtvTotal, ltvToCac,
+      avgClientTenureMonths: getAvgClientTenureMonths(),
+      churnRetention: latestChurnRetention,
     },
+    clientLtvBreakdown: getClientLtvBreakdown(),
+    clientStageBreakdown: getClientStageBreakdown(),
     warnings,
   });
 }

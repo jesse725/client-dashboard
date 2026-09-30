@@ -12,19 +12,18 @@ export async function GET() {
 
   const db = getDb();
   const clients = db.prepare(
-    `SELECT retainer_price, start_date, client_status FROM clients WHERE onboard_status != 'pending'`
-  ).all() as { retainer_price: number; start_date: string; client_status: string }[];
+    `SELECT retainer_price, client_status, months_paid FROM clients WHERE onboard_status != 'pending'`
+  ).all() as { retainer_price: number; client_status: string; months_paid: number }[];
 
   const active = clients.filter(c => c.client_status !== 'Churned');
   const totalMRR = active.reduce((s, c) => s + (c.retainer_price || 0), 0);
   const avgMonthlyRetainer = active.length > 0 ? totalMRR / active.length : 0;
 
-  const monthsWorked = (startDate: string) => {
-    const start = new Date(startDate);
-    const now = new Date();
-    return Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()));
-  };
-  const totalLTV = clients.reduce((s, c) => s + (c.retainer_price || 0) * monthsWorked(c.start_date), 0);
+  // LTV = retainer × confirmed months paid (the Kanban "Month N" stage an
+  // admin moved this client's card to — see lib/db.ts's months_paid
+  // migration), not elapsed calendar time. Same formula as Client Success
+  // and the Income Statement, so this card can't quietly disagree with them.
+  const totalLTV = clients.reduce((s, c) => s + (c.retainer_price || 0) * (c.months_paid || 0), 0);
 
   return NextResponse.json({
     hidden: false,

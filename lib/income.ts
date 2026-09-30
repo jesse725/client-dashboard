@@ -336,3 +336,53 @@ export function getClientLtvTotal(): number {
     WHERE onboard_status != 'pending'
   `).get() as any).total;
 }
+
+export interface ClientLtvRow {
+  id: number;
+  name: string;
+  clientStatus: string;
+  monthsPaid: number;
+  retainerPrice: number;
+  ltv: number;
+}
+
+// Per-client breakdown behind the portfolio total above — same formula,
+// just not summed, so it's obvious at a glance who the most valuable
+// clients actually are, not just the aggregate.
+export function getClientLtvBreakdown(): ClientLtvRow[] {
+  const db = getDb();
+  return (db.prepare(`
+    SELECT id, name, client_status AS clientStatus, months_paid AS monthsPaid,
+      COALESCE(retainer_price, 0) AS retainerPrice, COALESCE(retainer_price, 0) * months_paid AS ltv
+    FROM clients
+    WHERE onboard_status != 'pending'
+    ORDER BY ltv DESC, name ASC
+  `).all() as ClientLtvRow[]);
+}
+
+// How many clients currently sit at each Kanban stage — e.g. "how many
+// moved to Month 1/2/3, how many churned" as a standing figure rather than
+// a one-off lookup.
+export function getClientStageBreakdown(): { status: string; count: number }[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT client_status AS status, COUNT(*) AS count FROM clients
+    WHERE onboard_status != 'pending'
+    GROUP BY client_status
+    ORDER BY count DESC
+  `).all() as { status: string; count: number }[];
+}
+
+// Average months a client stays before churning — only over clients who
+// have actually churned (an active client's eventual tenure isn't known
+// yet, so including them would understate this). Uses the same months_paid
+// figure as LTV, for one consistent definition of "how long they stayed"
+// everywhere it's used.
+export function getAvgClientTenureMonths(): number | null {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT AVG(months_paid) AS avg, COUNT(*) AS n FROM clients
+    WHERE onboard_status != 'pending' AND client_status = 'Churned'
+  `).get() as any;
+  return row.n > 0 ? row.avg : null;
+}
