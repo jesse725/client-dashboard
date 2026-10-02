@@ -80,6 +80,16 @@ body {
   color: var(--text-muted);
 }
 
+/* Chrome/Edge render the native date-picker calendar icon in dark gray by
+   default — against this app's dark input background that's effectively
+   invisible, so the calendar picker was always there and clickable, it just
+   couldn't be seen. Inverting it to white fixes that; Safari/Firefox ignore
+   this vendor-prefixed selector and keep their own (already-visible) icon. */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
 select.input option {
   background: var(--surface-2);
 }

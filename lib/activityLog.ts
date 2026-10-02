@@ -8,9 +8,12 @@ import {
 } from './meta';
 import { Client } from '@/types';
 
+// "No Change / Monitoring" first — most client reviews land here, so it's
+// the default instead of something requiring a scroll past rarer action
+// types to reach every time.
 export const ACTION_TYPES = [
-  'Budget Change', 'Paused Ad', 'Launched Ads', 'New Creative Test', 'Targeting Change',
-  'Campaign Structure Change', 'Offer / Copy Change', 'Scaling', 'No Change / Monitoring', 'Other',
+  'No Change / Monitoring', 'Paused Ad', 'Launched Ads', 'New Creative Test', 'Targeting Change',
+  'Campaign Structure Change', 'Offer / Copy Change', 'Scaling', 'Budget Change', 'Other',
 ] as const;
 
 export const CAMPAIGN_HEALTH_VALUES = ['healthy', 'needs_attention', 'action_required'] as const;

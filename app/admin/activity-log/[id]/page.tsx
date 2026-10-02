@@ -80,6 +80,8 @@ export default function ActivityLogDetailPage() {
   const [addingAll, setAddingAll] = useState(false);
   const [submitError, setSubmitError] = useState<string[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [lockingAll, setLockingAll] = useState(false);
+  const [lockAllResult, setLockAllResult] = useState<{ lockedCount: number; skipped: { name: string; missing: string[] }[] } | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -107,6 +109,7 @@ export default function ActivityLogDetailPage() {
 
   const readOnly = log.status === 'submitted';
   const doneCount = clients.filter((c) => c.review_status === 'locked' || c.review_status === 'skipped').length;
+  const lockableCount = clients.filter((c) => c.review_status === 'in_progress').length;
 
   async function addClient(clientId: number) {
     const res = await fetch(`/api/activity-log/${logId}/clients`, {
@@ -120,6 +123,16 @@ export default function ActivityLogDetailPage() {
     await fetch(`/api/activity-log/${logId}/clients/review-all`, { method: 'POST' });
     await load();
     setAddingAll(false);
+  }
+
+  async function lockAll() {
+    setLockingAll(true);
+    setLockAllResult(null);
+    const res = await fetch(`/api/activity-log/${logId}/lock-all`, { method: 'POST' });
+    const data = await res.json();
+    setLockingAll(false);
+    if (res.ok) setLockAllResult(data);
+    await load();
   }
 
   async function submitLog() {
@@ -162,10 +175,23 @@ export default function ActivityLogDetailPage() {
 
         {/* Progress */}
         <div className="card p-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold text-sm uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Client Reviews</h2>
-            <span className="font-bold">{doneCount} / {clients.length} Completed</span>
+            <div className="flex items-center gap-3">
+              <span className="font-bold">{doneCount} / {clients.length} Completed</span>
+              {!readOnly && lockableCount > 0 && (
+                <button onClick={lockAll} disabled={lockingAll} className="btn-ghost text-xs flex items-center gap-1.5 py-1 px-2">
+                  <Lock size={12} /> {lockingAll ? 'Locking…' : `Lock All (${lockableCount})`}
+                </button>
+              )}
+            </div>
           </div>
+          {lockAllResult && (
+            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+              Locked {lockAllResult.lockedCount}.
+              {lockAllResult.skipped.length > 0 && ` Still need attention: ${lockAllResult.skipped.map((s) => `${s.name} (${s.missing.join(', ')})`).join('; ')}.`}
+            </p>
+          )}
           {clients.length === 0 ? (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No clients added yet.</p>
           ) : (
