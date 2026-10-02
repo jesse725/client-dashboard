@@ -441,6 +441,9 @@ function KanbanCard({ c, onUpdate, ghlStage, onClick }: {
 // ── Overview Table ────────────────────────────────────────────────────────────
 function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: (c: ClientRow) => void }) {
   const active = clients.filter(c => c.client_status !== 'Churned');
+  // Churned clients sink to the bottom — still listed, just out of the way.
+  // Array.sort is stable, so everyone else keeps the order the API gave them.
+  const ordered = [...clients].sort((a, b) => Number(a.client_status === 'Churned') - Number(b.client_status === 'Churned'));
 
   return (
     <div className="space-y-4">
@@ -482,7 +485,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
               </tr>
             </thead>
             <tbody>
-              {clients.map((c, i) => {
+              {ordered.map((c, i) => {
                 const totalAdSpend = c.total_ad_spend ?? (c.ad_spend || (c.daily_ad_spend * c.days_as_client));
                 const cpl = c.cached_leads > 0 ? totalAdSpend / c.cached_leads : 0;
                 const cpAppt = c.appointments > 0 ? totalAdSpend / c.appointments : 0;
@@ -496,7 +499,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                 return (
                   <tr key={c.id}
                     className="hover:bg-[var(--surface-2)] cursor-pointer transition-colors"
-                    style={{ borderBottom: i < clients.length - 1 ? '1px solid var(--border)' : 'none' }}
+                    style={{ borderBottom: i < ordered.length - 1 ? '1px solid var(--border)' : 'none' }}
                     onClick={() => onSelect(c)}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
