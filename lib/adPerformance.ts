@@ -3,7 +3,8 @@ import { cleanMetaToken, fetchMetaAdStats, fetchMetaAdLevelStats, metaErrorMessa
 import { ageLabel, cachedMeta } from './metaCache';
 import { Client } from '@/types';
 
-const RECENT_DAYS = 3;
+// Trailing windows (in days) the Client Tracker shows an overall CPL for.
+const RECENT_WINDOWS = [3, 7] as const;
 
 export interface AdPerformanceRow {
   adId: string;
@@ -16,13 +17,18 @@ export interface AdPerformanceRow {
   lastLeadAt: string | null; // ISO date of the most recent lead attributed to this ad
 }
 
+export interface RecentWindowStat {
+  days: number;
+  cpl: number | null; // overall (not per-ad) CPL over the trailing `days` days — null without spend or without leads
+  leads: number; // leads in that same window, regardless of ad attribution
+}
+
 export interface ClientAdPerformance {
   ads: AdPerformanceRow[];
   bestCpl: number | null; // lowest CPL among ads that have at least one lead
   bestAdName: string | null; // the ad bestCpl belongs to
   lastLeadAt: string | null; // most recent lead across the WHOLE pipeline (not just ad-attributed)
-  recentCpl: number | null; // overall (not per-ad) CPL over the last RECENT_DAYS days
-  recentLeads: number; // leads in that same window, regardless of ad attribution
+  recent: RecentWindowStat[]; // one entry per RECENT_WINDOWS value, in order
   metaError: string | null; // Meta credentials are saved but the ad-level call failed (or is stale) — why
 }
 
@@ -111,9 +117,10 @@ export async function getMetaAdLevel(client: Client, opts: { refresh?: boolean }
   );
 }
 
-// Account-level (not per-ad) spend for the trailing RECENT_DAYS window, cached
-// separately from the whole-campaign figures above since it has its own,
-// much-shorter-lived window.
+// Account-level (not per-ad) spend for one trailing window, cached separately
+// from the whole-campaign figures above since each has its own,
+// much-shorter-lived window (the cache key includes `since`, so the 3-day and
+// 7-day windows never share an entry).
 async function getRecentSpend(client: Client, since: string, until: string, opts: { refresh?: boolean } = {}): Promise<number> {
   const account = normalizeAdAccountId(client.meta_ad_account_id);
   const got = await cachedMeta(`recent:${client.id}:${account}:${since}`, opts, () =>
@@ -126,15 +133,17 @@ async function getRecentSpend(client: Client, since: string, until: string, opts
 // the individual client dashboard and the admin Client Tracker overview.
 export async function getClientAdPerformance(client: Client, agencyGhlKey: string, opts: { refresh?: boolean } = {}): Promise<ClientAdPerformance> {
   const { since } = metaWindow(client.start_date);
-  const recent = recentWindow(RECENT_DAYS);
-  // GHL's createdAt is a real UTC timestamp, so the recent-window boundary
+  // GHL's createdAt is a real UTC timestamp, so each recent-window boundary
   // needs an actual instant, not the LA-calendar-date string recentWindow
   // returns for Meta's own (timezone-agnostic) resolution — same reasoning as
   // metaHealth.ts's lead-tracking window. No per-account timezone is fetched
-  // here (that's a whole extra Meta call for a 3-day, non-billing figure) —
-  // America/Los_Angeles is used directly, same upper-bound assumption
-  // metaWindow itself already relies on.
-  const recentSinceInstant = zonedStartOfDay(recent.since, 'America/Los_Angeles');
+  // here (that's a whole extra Meta call for a short-window, non-billing
+  // figure) — America/Los_Angeles is used directly, same upper-bound
+  // assumption metaWindow itself already relies on.
+  const windows = RECENT_WINDOWS.map((days) => {
+    const w = recentWindow(days);
+    return { days, since: w.since, until: w.until, sinceInstant: zonedStartOfDay(w.since, 'America/Los_Angeles') };
+  });
 
   let opps: AttributableOpp[] = [];
   if (client.ghl_location_id && client.ghl_pipeline_id) {
@@ -145,16 +154,19 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   }
 
   // Last lead across the whole pipeline, regardless of ad attribution or Meta
-  // connection, and how many of those fall in the last RECENT_DAYS days.
+  // connection, and how many leads fall in each trailing window (a lead from
+  // the last 3 days is also in the last 7, so the windows nest).
   let lastLeadAt: string | null = null;
-  let recentLeads = 0;
+  const recentLeads = windows.map(() => 0);
   for (const o of opps) {
-    if (!lastLeadAt || new Date(o.createdAt) > new Date(lastLeadAt)) lastLeadAt = o.createdAt;
-    if (new Date(o.createdAt) >= recentSinceInstant) recentLeads++;
+    const created = new Date(o.createdAt);
+    if (!lastLeadAt || created > new Date(lastLeadAt)) lastLeadAt = o.createdAt;
+    windows.forEach((w, i) => { if (created >= w.sinceInstant) recentLeads[i]++; });
   }
+  const recentWithoutSpend: RecentWindowStat[] = windows.map((w, i) => ({ days: w.days, cpl: null, leads: recentLeads[i] }));
 
   if (!client.meta_access_token || !client.meta_ad_account_id) {
-    return { ads: [], bestCpl: null, bestAdName: null, lastLeadAt, recentCpl: null, recentLeads, metaError: null };
+    return { ads: [], bestCpl: null, bestAdName: null, lastLeadAt, recent: recentWithoutSpend, metaError: null };
   }
 
   // lastLeadAt above comes purely from GHL, so a Meta failure must not take it
@@ -163,17 +175,19 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   // a Meta token expired. Best CPL is the only thing that genuinely needs Meta.
   let adStats: Awaited<ReturnType<typeof fetchMetaAdLevelStats>>;
   let metaError: string | null = null;
-  let recentSpend: number | null = null;
+  let recentSpends: (number | null)[] = windows.map(() => null);
   try {
-    const [got, spend] = await Promise.all([
+    // A failed recent-window spend call just leaves that window's CPL null —
+    // only the main per-ad call failing is treated as a Meta error above.
+    const [got, spends] = await Promise.all([
       getMetaAdLevel(client, opts),
-      getRecentSpend(client, recent.since, recent.until, opts).catch(() => null),
+      Promise.all(windows.map((w) => getRecentSpend(client, w.since, w.until, opts).catch(() => null))),
     ]);
     adStats = got.value;
-    recentSpend = spend;
+    recentSpends = spends;
     if (got.stale) metaError = `${got.error} Showing per-ad figures from ${ageLabel(got.fetchedAt)}.`;
   } catch (e) {
-    return { ads: [], bestCpl: null, bestAdName: null, lastLeadAt, recentCpl: null, recentLeads, metaError: metaErrorMessage(e) };
+    return { ads: [], bestCpl: null, bestAdName: null, lastLeadAt, recent: recentWithoutSpend, metaError: metaErrorMessage(e) };
   }
 
   const attribution = attributeLeads(opps, adStats, since);
@@ -205,7 +219,10 @@ export async function getClientAdPerformance(client: Client, agencyGhlKey: strin
   const cplValues = ads.map(a => a.cpl).filter((v): v is number => v != null);
   const bestCpl = cplValues.length > 0 ? Math.min(...cplValues) : null;
   const bestAdName = ads.find(a => a.cpl != null)?.adName ?? null;
-  const recentCpl = recentSpend != null && recentLeads > 0 ? recentSpend / recentLeads : null;
+  const recent: RecentWindowStat[] = windows.map((w, i) => {
+    const spend = recentSpends[i];
+    return { days: w.days, cpl: spend != null && recentLeads[i] > 0 ? spend / recentLeads[i] : null, leads: recentLeads[i] };
+  });
 
-  return { ads, bestCpl, bestAdName, lastLeadAt, recentCpl, recentLeads, metaError };
+  return { ads, bestCpl, bestAdName, lastLeadAt, recent, metaError };
 }

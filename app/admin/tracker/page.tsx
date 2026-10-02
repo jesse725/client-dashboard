@@ -62,7 +62,8 @@ interface ClientRow {
   no_show: number;
   shows: number;
   show_pct: number | null;
-  recent_cpl: number | null; // CPL over the last 3 days
+  recent_cpl_3d: number | null; // overall CPL over the last 3 days
+  recent_cpl_7d: number | null; // overall CPL over the last 7 days
 }
 
 // GHL Client Success pipeline stage → kanban column mapping
@@ -164,6 +165,13 @@ const LAST_LEAD_YELLOW_MAX_DAYS = 7;
 // starting point, easy to retune here if it doesn't match reality.
 const TOTAL_LEADS_GREEN_MIN = 10;
 const TOTAL_LEADS_YELLOW_MIN = 3;
+
+// Same CPL bands the CPL / Best Ad CPL columns use, for the trailing-window
+// CPL columns (a missing figure — no Meta spend or no leads — reads muted).
+function cplBandColor(v: number | null): string {
+  if (v == null) return 'var(--text-muted)';
+  return v <= CPL_GREEN_MAX ? 'var(--green)' : v <= CPL_YELLOW_MAX ? 'var(--yellow)' : 'var(--red)';
+}
 
 type HealthStatus = 'green' | 'yellow' | 'red';
 
@@ -468,7 +476,7 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
           <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-                {['Client', 'Status', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'CPL (3d)', 'Best Ad', 'Last Lead', 'Leads', 'Contact %', 'Appointments', 'Shows', 'Cost/Appointment', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
+                {['Client', 'Status', 'Stage', 'Tenure', 'Retainer', 'Ad Spend', 'CPL', 'CPL (3d)', 'CPL (7d)', 'Best Ad', 'Last Lead', 'Leads', 'Contact %', 'Appointments', 'Shows', 'Cost/Appointment', 'Jobs Closed', 'Close %', 'Check-ins', 'Sentiment', 'Next Billing'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -522,9 +530,13 @@ function OverviewTable({ clients, onSelect }: { clients: ClientRow[]; onSelect: 
                     <td className="px-4 py-3 font-semibold" style={{ color: cpl > 0 && cpl <= 50 ? 'var(--green)' : cpl > 150 ? 'var(--red)' : cpl > 0 ? 'var(--yellow)' : 'var(--text-muted)' }}>
                       {cpl > 0 ? `$${Math.round(cpl)}` : '—'}
                     </td>
-                    <td className="px-4 py-3 font-semibold" style={{ color: c.recent_cpl == null ? 'var(--text-muted)' : c.recent_cpl <= CPL_GREEN_MAX ? 'var(--green)' : c.recent_cpl <= CPL_YELLOW_MAX ? 'var(--yellow)' : 'var(--red)' }}
+                    <td className="px-4 py-3 font-semibold" style={{ color: cplBandColor(c.recent_cpl_3d) }}
                       title="Overall cost per lead, last 3 days">
-                      {c.recent_cpl != null ? `$${Math.round(c.recent_cpl)}` : '—'}
+                      {c.recent_cpl_3d != null ? `$${Math.round(c.recent_cpl_3d)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: cplBandColor(c.recent_cpl_7d) }}
+                      title="Overall cost per lead, last 7 days">
+                      {c.recent_cpl_7d != null ? `$${Math.round(c.recent_cpl_7d)}` : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-semibold truncate max-w-[160px]" style={{ color: c.best_ad_cpl == null ? 'var(--text-muted)' : c.best_ad_cpl <= CPL_GREEN_MAX ? 'var(--green)' : c.best_ad_cpl <= CPL_YELLOW_MAX ? 'var(--yellow)' : 'var(--red)' }}

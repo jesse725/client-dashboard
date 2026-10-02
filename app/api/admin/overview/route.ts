@@ -83,7 +83,8 @@ export async function GET(req: Request) {
       meta_connected: false, best_ad_cpl: null as number | null, best_ad_name: null as string | null,
       last_lead_at: null as string | null, contact_pct: null as number | null, appointments: 0,
       no_show: 0, shows: 0, show_pct: null as number | null,
-      recent_cpl: null as number | null,
+      recent_cpl_3d: null as number | null,
+      recent_cpl_7d: null as number | null,
     };
     try {
       const live = await getLiveClientStats(c, agencyGhlKey, { refresh });
@@ -130,7 +131,8 @@ export async function GET(req: Request) {
       row.best_ad_cpl = perf.bestCpl;
       row.best_ad_name = perf.bestAdName;
       row.last_lead_at = perf.lastLeadAt;
-      row.recent_cpl = perf.recentCpl;
+      row.recent_cpl_3d = perf.recent.find((r) => r.days === 3)?.cpl ?? null;
+      row.recent_cpl_7d = perf.recent.find((r) => r.days === 7)?.cpl ?? null;
       // Either Meta call may be the one that trips (rate limits hit one and not
       // the other) — keep whichever reason there is.
       if (!row.meta_error && perf.metaError) row.meta_error = perf.metaError;
